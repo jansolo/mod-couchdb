@@ -9,6 +9,7 @@ import org.vertx.java.core.buffer.Buffer;
 import org.vertx.java.core.eventbus.Message;
 import org.vertx.java.core.http.HttpClientResponse;
 import org.vertx.java.core.json.JsonArray;
+import org.vertx.java.core.json.JsonElement;
 import org.vertx.java.core.json.JsonObject;
 
 import java.net.HttpURLConnection;
@@ -72,9 +73,8 @@ public class CouchdbVerticle extends BusModBase {
                 queryUri.append("?");
                 for (Object param : params) {
                     final JsonObject jsonParam = (JsonObject) param;
-                    final Map<String, Object> paramMap = jsonParam.toMap();
-                    for (final String key : paramMap.keySet()) {
-                        final Object value = paramMap.get(key);
+                    for (final String key : jsonParam.getFieldNames()) {
+                        final Object value = jsonParam.getValue(key);
                         queryUri.append("&").append(key).append("=").append(String.class.isAssignableFrom(value
                                 .getClass()) ? String.format("\"%1$s\"", value) : value);
                     }
@@ -104,7 +104,15 @@ public class CouchdbVerticle extends BusModBase {
                                 queryMsg.fail(response.statusCode(), response.statusMessage());
                             }
                         }
-                    });
+                    }).exceptionHandler(new Handler<Throwable>() {
+                @Override
+                public void handle(final Throwable t) {
+                    final String errMsg = String.format("failed to query %1$s: %2$s",
+                            queryUri.toString(), t.getMessage());
+                    logger.error(errMsg, t);
+                    queryMsg.fail(500, errMsg);
+                }
+            });
         }
     }
 
