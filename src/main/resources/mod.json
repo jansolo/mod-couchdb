@@ -1,5 +1,5 @@
 {
-  "main":"com.dreikraft.vertx.couchdb.CouchDbInitVerticle",
+  "main":"com.dreikraft.vertx.couchdb.CouchdbInitVerticle",
 
   "description":"Wraps the couchdb API onto vert.x event bus messages.",
   "licenses": ["The Apache Software License Version 2.0"],
