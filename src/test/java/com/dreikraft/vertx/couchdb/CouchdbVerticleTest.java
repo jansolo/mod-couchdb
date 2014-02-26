@@ -22,8 +22,9 @@ public class CouchdbVerticleTest extends TestVerticle {
     public void start() {
         super.initialize();
 
+        final JsonObject config = new JsonObject().putString("user", "admin").putString("passwd", "admin");
         container.logger().info(String.format("starting %1$s tests ...", CouchdbVerticle.class.getName()));
-        container.deployModule(System.getProperty("vertx.modulename"), new AsyncResultHandler<String>() {
+        container.deployModule(System.getProperty("vertx.modulename"), config, new AsyncResultHandler<String>() {
             @Override
             public void handle(AsyncResult<String> asyncResult) {
                 container.logger().info(String.format("successfully started %1$s tests",
@@ -124,5 +125,64 @@ public class CouchdbVerticleTest extends TestVerticle {
         });
     }
 
+    @Test
+    public void testCreateDb() {
+        final String address = CouchdbVerticle.ADDRESS_SERVER;
+        final JsonObject message = new JsonObject().putString("method", "PUT").putString("db", "dummy");
+        vertx.eventBus().sendWithTimeout(address, message, TIMEOUT, new AsyncResultHandler<Message<JsonObject>>() {
+            @Override
+            public void handle(AsyncResult<Message<JsonObject>> reply) {
+                if (reply.succeeded()) {
+                    final JsonObject docs = reply.result().body();
+                    container.logger().info(String.format("%1$s: %2$s", "", docs.encode()));
+                    VertxAssert.assertTrue("not ok", docs.getBoolean("ok"));
+                } else {
+                    container.logger().error(String.format("failed to perform %1$s: %2$s", address,
+                            reply.cause().getMessage()), reply.cause());
+                    VertxAssert.fail(reply.cause().getMessage());
+                }
+                vertx.eventBus().send(address, new JsonObject().putString("method", "DELETE").putString("db", "dummy"));
+                VertxAssert.testComplete();
+            }
+        });
+    }
 
+    @Test
+    public void testCreateDoc() {
+        final String address = CouchdbVerticle.ADDRESS_SERVER;
+        final JsonObject message = new JsonObject().putString("method", "PUT").putString("db", "dummy");
+        vertx.eventBus().sendWithTimeout(address, message, TIMEOUT, new AsyncResultHandler<Message<JsonObject>>() {
+            @Override
+            public void handle(AsyncResult<Message<JsonObject>> reply) {
+                if (reply.succeeded()) {
+                    final JsonObject message = new JsonObject().putString("method", "POST").putString("db",
+                            "dummy").putObject("body",
+                            new JsonObject().putString("dummy", "value"));
+                    vertx.eventBus().sendWithTimeout(address, message, TIMEOUT,
+                            new AsyncResultHandler<Message<JsonObject>>() {
+                        @Override
+                        public void handle(AsyncResult<Message<JsonObject>> reply) {
+                            if (reply.succeeded()) {
+                                final JsonObject docs = reply.result().body();
+                                container.logger().info(String.format("%1$s: %2$s", "", docs.encode()));
+                                VertxAssert.assertTrue("not ok", docs.getBoolean("ok"));
+                            } else {
+                                container.logger().error(String.format("failed to perform %1$s: %2$s", address,
+                                        reply.cause().getMessage()), reply.cause());
+                                VertxAssert.fail(reply.cause().getMessage());
+                            }
+                            vertx.eventBus().send(address, new JsonObject().putString("method",
+                                    "DELETE").putString("db", "dummy"));
+                            VertxAssert.testComplete();
+                        }
+                    });
+                } else {
+                    container.logger().error(String.format("failed to perform %1$s: %2$s", address,
+                            reply.cause().getMessage()), reply.cause());
+                    VertxAssert.fail(reply.cause().getMessage());
+                    VertxAssert.testComplete();
+                }
+            }
+        });
+    }
 }

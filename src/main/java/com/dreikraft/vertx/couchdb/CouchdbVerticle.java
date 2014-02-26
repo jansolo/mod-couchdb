@@ -7,27 +7,29 @@ import org.vertx.java.core.Future;
 import org.vertx.java.core.Handler;
 import org.vertx.java.core.buffer.Buffer;
 import org.vertx.java.core.eventbus.Message;
+import org.vertx.java.core.http.HttpClient;
+import org.vertx.java.core.http.HttpClientRequest;
 import org.vertx.java.core.http.HttpClientResponse;
 import org.vertx.java.core.json.JsonArray;
-import org.vertx.java.core.json.JsonElement;
 import org.vertx.java.core.json.JsonObject;
 
 import java.net.HttpURLConnection;
-import java.util.Map;
 
 /**
  * Registers event bus handlers for CouchDb API methods.
  */
 public class CouchdbVerticle extends BusModBase {
 
+    public static final String ADDRESS_SERVER = "/";
     public static final String ADDRESS_DB = "/%1$s";
     public static final String ADDRESS_ALL_DBS = "/_all_dbs";
     public static final String ADDRESS_ALL_DOCS = "/%1$s/_all_docs";
     public static final String ADDRESS_VIEW = "/%1$s/_design/%2$s/_view/%3$s";
 
-    private String couchdbHost;
-    private int couchdbPort;
+    private String host;
+    private int port;
     private long timeout;
+    private String baseAuth;
 
     /**
      * Registers handlers for all databases and views in the given couchdb instance.
@@ -39,11 +41,21 @@ public class CouchdbVerticle extends BusModBase {
         super.start();
 
         // configure members
-        couchdbHost = getOptionalStringConfig("couchdbHost", "localhost");
-        couchdbPort = getOptionalIntConfig("couchdbPort", 5984);
+        host = getOptionalStringConfig("host", "localhost");
+        port = getOptionalIntConfig("port", 5984);
         timeout = getOptionalLongConfig("timeout", 10000);
+        final String user = getOptionalStringConfig("user", null);
+        final String passwd = getOptionalStringConfig("passwd", null);
+        if (user != null && passwd != null) {
+            baseAuth = new StringBuilder("Basic ").append(new JsonObject().putBinary("baseAuth",
+                    String.format("%1$s:%2$s", user, passwd).getBytes()).getString("baseAuth")).toString();
+        }
 
         // TODO register couchdb server API handlers
+        // couchdb server handler
+        if (logger.isDebugEnabled())
+            logger.debug(String.format("registering handler %1$s", ADDRESS_SERVER));
+        eb.registerHandler(ADDRESS_SERVER, new CouchdbRequestHandler(ADDRESS_SERVER));
 
         // /_all_dbs handler
         if (logger.isDebugEnabled())
@@ -61,9 +73,13 @@ public class CouchdbVerticle extends BusModBase {
         }
 
         @Override
-        public void handle(final Message<JsonObject> queryMsg) {
-            final JsonObject json = queryMsg.body();
+        public void handle(final Message<JsonObject> requestMsg) {
+            final JsonObject json = requestMsg.body();
             final StringBuilder queryUri = new StringBuilder(address);
+            final String db = json.getString("db");
+            if (db != null) {
+                queryUri.append(address.equals(ADDRESS_SERVER) ? "" : "/").append(db);
+            }
             final String id = json.getString("id");
             if (id != null) {
                 queryUri.append("/").append(id);
@@ -80,39 +96,103 @@ public class CouchdbVerticle extends BusModBase {
                     }
                 }
             }
+            final String method = json.getString("method", "GET");
+            final JsonObject body = json.getObject("body");
+
             if (logger.isDebugEnabled())
                 logger.debug(String.format("executing query: %1$s", queryUri.toString()));
 
-            vertx.createHttpClient().setHost(couchdbHost).setPort(couchdbPort).getNow(queryUri.toString(),
-                    new Handler<HttpClientResponse>() {
+            final HttpClient httpClient = vertx.createHttpClient().setHost(host).setPort(port);
+            final Handler<HttpClientResponse> responseHandler = new ResponseHandler(requestMsg);
+            final Handler<Throwable> exceptionHandler = new ConnectExceptionHandler(queryUri, requestMsg);
+            if (method.equals("GET")) {
+                final HttpClientRequest request = httpClient.get(queryUri.toString(), responseHandler)
+                        .exceptionHandler(exceptionHandler);
+                putBaseAuth(request).end();
+            } else if (method.equals("HEAD")) {
+                final HttpClientRequest request = httpClient.head(queryUri.toString(), responseHandler)
+                        .exceptionHandler(exceptionHandler);
+                putBaseAuth(request).end();
+            } else if (method.equals("DELETE")) {
+                final HttpClientRequest request = httpClient.delete(queryUri.toString(), responseHandler)
+                        .exceptionHandler(exceptionHandler);
+                putBaseAuth(request).end();
+            } else if (method.equals("PUT")) {
+                final HttpClientRequest request = httpClient.put(queryUri.toString(), responseHandler)
+                        .exceptionHandler(exceptionHandler);
+                putBaseAuth(putBody(body, request)).end();
+            } else if (method.equals("POST")) {
+                final HttpClientRequest request = httpClient.post(queryUri.toString(), responseHandler)
+                        .exceptionHandler(exceptionHandler);
+                putBaseAuth(putBody(body, request)).end();
+            }
+        }
+
+        private HttpClientRequest putBody(final JsonObject body, final HttpClientRequest request) {
+            if (body != null) {
+                final String bodyText = body.encode();
+                request.putHeader("Content-Length", String.valueOf(bodyText.length())).write(bodyText,
+                        "UTF-8");
+            } else {
+                request.putHeader("Content-Length", "0");
+            }
+            return request.putHeader("Content-Type", "application/json");
+        }
+
+        private HttpClientRequest putBaseAuth(final HttpClientRequest request) {
+            if (baseAuth != null) {
+                request.putHeader("Authorization", baseAuth);
+            }
+            return request;
+        }
+
+        private class ResponseHandler implements Handler<HttpClientResponse> {
+
+            private Message<JsonObject> requestMsg;
+
+            private ResponseHandler(Message<JsonObject> requestMsg) {
+                this.requestMsg = requestMsg;
+            }
+
+            @Override
+            public void handle(final HttpClientResponse response) {
+                if (response.statusCode() >= HttpURLConnection.HTTP_OK
+                        && response.statusCode() < HttpURLConnection.HTTP_MULT_CHOICE) {
+                    response.bodyHandler(new Handler<Buffer>() {
                         @Override
-                        public void handle(final HttpClientResponse response) {
-                            if (response.statusCode() == HttpURLConnection.HTTP_OK) {
-                                response.bodyHandler(new Handler<Buffer>() {
-                                    @Override
-                                    public void handle(final Buffer body) {
-                                        if (body.toString("UTF-8").startsWith("[")) {
-                                            queryMsg.reply(new JsonArray(body.toString("UTF-8")));
-                                        } else if (body.toString("UTF-8").startsWith("{")) {
-                                            queryMsg.reply(new JsonObject(body.toString("UTF-8")));
-                                        } else {
-                                            queryMsg.reply(body.toString("UTF-8"));
-                                        }
-                                    }
-                                });
+                        public void handle(final Buffer body) {
+                            if (body.toString("UTF-8").startsWith("[")) {
+                                requestMsg.reply(new JsonArray(body.toString("UTF-8")));
+                            } else if (body.toString("UTF-8").startsWith("{")) {
+                                requestMsg.reply(new JsonObject(body.toString("UTF-8")));
                             } else {
-                                queryMsg.fail(response.statusCode(), response.statusMessage());
+                                requestMsg.reply(body.toString("UTF-8"));
                             }
                         }
-                    }).exceptionHandler(new Handler<Throwable>() {
-                @Override
-                public void handle(final Throwable t) {
-                    final String errMsg = String.format("failed to query %1$s: %2$s",
-                            queryUri.toString(), t.getMessage());
-                    logger.error(errMsg, t);
-                    queryMsg.fail(500, errMsg);
+                    });
+                } else {
+                    requestMsg.fail(response.statusCode(), response.statusMessage());
                 }
-            });
+
+            }
+        }
+
+        private class ConnectExceptionHandler implements Handler<Throwable> {
+            private final StringBuilder queryUri;
+            private final Message<JsonObject> requestMsg;
+
+            public ConnectExceptionHandler(StringBuilder queryUri, Message<JsonObject> requestMsg) {
+                this.queryUri = queryUri;
+                this.requestMsg = requestMsg;
+            }
+
+            @Override
+            public void handle(final Throwable t) {
+                final String errMsg = String.format("failed to query %1$s: %2$s",
+                        queryUri.toString(), t.getMessage());
+                logger.error(errMsg, t);
+                requestMsg.fail(500, errMsg);
+            }
         }
     }
 
