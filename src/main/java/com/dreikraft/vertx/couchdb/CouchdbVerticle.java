@@ -13,6 +13,8 @@ import org.vertx.java.core.http.HttpClientResponse;
 import org.vertx.java.core.json.JsonArray;
 import org.vertx.java.core.json.JsonObject;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.net.HttpURLConnection;
 
 /**
@@ -96,6 +98,7 @@ public class CouchdbVerticle extends BusModBase {
                     }
                 }
             }
+            final JsonArray headers = json.getArray("headers");
             final String method = json.getString("method", "GET");
             final JsonObject body = json.getObject("body");
 
@@ -106,30 +109,22 @@ public class CouchdbVerticle extends BusModBase {
             final HttpClient httpClient = vertx.createHttpClient().setHost(host).setPort(port);
             final Handler<HttpClientResponse> responseHandler = new ResponseHandler(requestMsg);
             final Handler<Throwable> requestExcHandler = new RequestExceptionHandler(couchdbUri, requestMsg);
-            if (method.equals("GET")) {
-                final HttpClientRequest request = httpClient.get(couchdbUri.toString(), responseHandler)
-                        .exceptionHandler(requestExcHandler);
-                putBaseAuth(request).end();
-            } else if (method.equals("HEAD")) {
-                final HttpClientRequest request = httpClient.head(couchdbUri.toString(), responseHandler)
-                        .exceptionHandler(requestExcHandler);
-                putBaseAuth(request).end();
-            } else if (method.equals("DELETE")) {
-                final HttpClientRequest request = httpClient.delete(couchdbUri.toString(), responseHandler)
-                        .exceptionHandler(requestExcHandler);
-                putBaseAuth(request).end();
-            } else if (method.equals("PUT")) {
-                final HttpClientRequest request = httpClient.put(couchdbUri.toString(), responseHandler)
-                        .exceptionHandler(requestExcHandler);
-                putBaseAuth(putBody(body, request)).end();
-            } else if (method.equals("POST")) {
-                final HttpClientRequest request = httpClient.post(couchdbUri.toString(), responseHandler)
-                        .exceptionHandler(requestExcHandler);
-                putBaseAuth(putBody(body, request)).end();
+
+            try {
+                final Method httpMethod = httpClient.getClass().getMethod(method.toLowerCase(), String.class,
+                        Handler.class);
+                final HttpClientRequest request = (HttpClientRequest)httpMethod.invoke(httpClient,
+                        couchdbUri.toString(), responseHandler);
+                putBaseAuth(putBody(putHeaders(request, headers), body)).end();
+            } catch (NoSuchMethodException | InvocationTargetException | IllegalAccessException ex) {
+                final String errorMsg = String.format("failed to process %1$s: ", couchdbUri.toString(),
+                        ex.getMessage());
+                logger.error(errorMsg, ex);
+                requestMsg.fail(500, errorMsg);
             }
         }
 
-        private HttpClientRequest putBody(final JsonObject body, final HttpClientRequest request) {
+        private HttpClientRequest putBody(final HttpClientRequest request, final JsonObject body) {
             if (body != null) {
                 final String bodyText = body.encode();
                 request.putHeader("Content-Length", String.valueOf(bodyText.length()))
@@ -141,6 +136,18 @@ public class CouchdbVerticle extends BusModBase {
         private HttpClientRequest putBaseAuth(final HttpClientRequest request) {
             if (baseAuth != null) {
                 request.putHeader("Authorization", baseAuth);
+            }
+            return request;
+        }
+
+        private HttpClientRequest putHeaders(final HttpClientRequest request, final JsonArray headers) {
+            if (headers != null) {
+                for (final Object header : headers) {
+                    final JsonObject headerJson = (JsonObject) header;
+                    for (final String headerName : headerJson.getFieldNames()) {
+                        request.putHeader(headerName, (String) headerJson.getField(headerName));
+                    }
+                }
             }
             return request;
         }
