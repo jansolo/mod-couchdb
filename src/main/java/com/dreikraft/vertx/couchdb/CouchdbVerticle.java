@@ -75,23 +75,23 @@ public class CouchdbVerticle extends BusModBase {
         @Override
         public void handle(final Message<JsonObject> requestMsg) {
             final JsonObject json = requestMsg.body();
-            final StringBuilder queryUri = new StringBuilder(address);
+            final StringBuilder couchdbUri = new StringBuilder(address);
             final String db = json.getString("db");
             if (db != null) {
-                queryUri.append(address.equals(ADDRESS_SERVER) ? "" : "/").append(db);
+                couchdbUri.append(address.equals(ADDRESS_SERVER) ? "" : "/").append(db);
             }
             final String id = json.getString("id");
             if (id != null) {
-                queryUri.append("/").append(id);
+                couchdbUri.append("/").append(id);
             }
             final JsonArray params = json.getArray("params");
             if (params != null) {
-                queryUri.append("?");
+                couchdbUri.append("?");
                 for (Object param : params) {
                     final JsonObject jsonParam = (JsonObject) param;
                     for (final String key : jsonParam.getFieldNames()) {
                         final Object value = jsonParam.getValue(key);
-                        queryUri.append("&").append(key).append("=").append(String.class.isAssignableFrom(value
+                        couchdbUri.append("&").append(key).append("=").append(String.class.isAssignableFrom(value
                                 .getClass()) ? String.format("\"%1$s\"", value) : value);
                     }
                 }
@@ -100,30 +100,31 @@ public class CouchdbVerticle extends BusModBase {
             final JsonObject body = json.getObject("body");
 
             if (logger.isDebugEnabled())
-                logger.debug(String.format("executing query: %1$s", queryUri.toString()));
+                logger.debug(String.format("executing request: %1$s %2$s %3$s", method, couchdbUri.toString(),
+                        body != null ? body : ""));
 
             final HttpClient httpClient = vertx.createHttpClient().setHost(host).setPort(port);
             final Handler<HttpClientResponse> responseHandler = new ResponseHandler(requestMsg);
-            final Handler<Throwable> exceptionHandler = new ConnectExceptionHandler(queryUri, requestMsg);
+            final Handler<Throwable> requestExcHandler = new RequestExceptionHandler(couchdbUri, requestMsg);
             if (method.equals("GET")) {
-                final HttpClientRequest request = httpClient.get(queryUri.toString(), responseHandler)
-                        .exceptionHandler(exceptionHandler);
+                final HttpClientRequest request = httpClient.get(couchdbUri.toString(), responseHandler)
+                        .exceptionHandler(requestExcHandler);
                 putBaseAuth(request).end();
             } else if (method.equals("HEAD")) {
-                final HttpClientRequest request = httpClient.head(queryUri.toString(), responseHandler)
-                        .exceptionHandler(exceptionHandler);
+                final HttpClientRequest request = httpClient.head(couchdbUri.toString(), responseHandler)
+                        .exceptionHandler(requestExcHandler);
                 putBaseAuth(request).end();
             } else if (method.equals("DELETE")) {
-                final HttpClientRequest request = httpClient.delete(queryUri.toString(), responseHandler)
-                        .exceptionHandler(exceptionHandler);
+                final HttpClientRequest request = httpClient.delete(couchdbUri.toString(), responseHandler)
+                        .exceptionHandler(requestExcHandler);
                 putBaseAuth(request).end();
             } else if (method.equals("PUT")) {
-                final HttpClientRequest request = httpClient.put(queryUri.toString(), responseHandler)
-                        .exceptionHandler(exceptionHandler);
+                final HttpClientRequest request = httpClient.put(couchdbUri.toString(), responseHandler)
+                        .exceptionHandler(requestExcHandler);
                 putBaseAuth(putBody(body, request)).end();
             } else if (method.equals("POST")) {
-                final HttpClientRequest request = httpClient.post(queryUri.toString(), responseHandler)
-                        .exceptionHandler(exceptionHandler);
+                final HttpClientRequest request = httpClient.post(couchdbUri.toString(), responseHandler)
+                        .exceptionHandler(requestExcHandler);
                 putBaseAuth(putBody(body, request)).end();
             }
         }
@@ -131,12 +132,10 @@ public class CouchdbVerticle extends BusModBase {
         private HttpClientRequest putBody(final JsonObject body, final HttpClientRequest request) {
             if (body != null) {
                 final String bodyText = body.encode();
-                request.putHeader("Content-Length", String.valueOf(bodyText.length())).write(bodyText,
-                        "UTF-8");
-            } else {
-                request.putHeader("Content-Length", "0");
+                request.putHeader("Content-Length", String.valueOf(bodyText.length()))
+                        .putHeader("Content-Type", "application/json").write(bodyText, "UTF-8");
             }
-            return request.putHeader("Content-Type", "application/json");
+            return request;
         }
 
         private HttpClientRequest putBaseAuth(final HttpClientRequest request) {
@@ -156,32 +155,39 @@ public class CouchdbVerticle extends BusModBase {
 
             @Override
             public void handle(final HttpClientResponse response) {
-                if (response.statusCode() >= HttpURLConnection.HTTP_OK
-                        && response.statusCode() < HttpURLConnection.HTTP_MULT_CHOICE) {
+                if (response.statusCode() < HttpURLConnection.HTTP_INTERNAL_ERROR) {
                     response.bodyHandler(new Handler<Buffer>() {
                         @Override
                         public void handle(final Buffer body) {
-                            if (body.toString("UTF-8").startsWith("[")) {
-                                requestMsg.reply(new JsonArray(body.toString("UTF-8")));
-                            } else if (body.toString("UTF-8").startsWith("{")) {
-                                requestMsg.reply(new JsonObject(body.toString("UTF-8")));
+                            if (response.statusCode() >= HttpURLConnection.HTTP_OK
+                                    && response.statusCode() < HttpURLConnection.HTTP_MULT_CHOICE) {
+                                if (body.toString("UTF-8").startsWith("[")) {
+                                    requestMsg.reply(new JsonArray(body.toString("UTF-8")));
+                                } else if (body.toString("UTF-8").startsWith("{")) {
+                                    requestMsg.reply(new JsonObject(body.toString("UTF-8")));
+                                } else {
+                                    requestMsg.reply(body.toString("UTF-8"));
+                                }
                             } else {
-                                requestMsg.reply(body.toString("UTF-8"));
+                                final JsonObject status = new JsonObject(body.toString("UTF-8"));
+                                final String statusMsg = String.format("%1$s: %2$s", response.statusMessage(),
+                                        status.getString("reason"));
+                                requestMsg.fail(response.statusCode(), statusMsg);
                             }
                         }
                     });
+
                 } else {
                     requestMsg.fail(response.statusCode(), response.statusMessage());
                 }
-
             }
         }
 
-        private class ConnectExceptionHandler implements Handler<Throwable> {
+        private class RequestExceptionHandler implements Handler<Throwable> {
             private final StringBuilder queryUri;
             private final Message<JsonObject> requestMsg;
 
-            public ConnectExceptionHandler(StringBuilder queryUri, Message<JsonObject> requestMsg) {
+            public RequestExceptionHandler(StringBuilder queryUri, Message<JsonObject> requestMsg) {
                 this.queryUri = queryUri;
                 this.requestMsg = requestMsg;
             }
@@ -199,6 +205,8 @@ public class CouchdbVerticle extends BusModBase {
     private class DbReflectionHandler implements AsyncResultHandler<Message<JsonArray>> {
 
         private final Future<Void> startedResult;
+        private boolean completed = false;
+        private int dbCount = 0;
 
         public DbReflectionHandler(final Future<Void> startedResult) {
             this.startedResult = startedResult;
@@ -230,7 +238,11 @@ public class CouchdbVerticle extends BusModBase {
                         registerViewHandlers(allDocsAddress, dbName, startedResult);
                     }
                 }
+                completed = true;
+                checkCompleted();
             } else {
+                logger.error(String.format("failed reflect couchdb: %1$s", allDbsReply.cause().getMessage()),
+                        allDbsReply.cause());
                 startedResult.setFailure(allDbsReply.cause());
             }
         }
@@ -244,18 +256,23 @@ public class CouchdbVerticle extends BusModBase {
             final JsonObject designDocsMessage = new JsonObject().putArray("params",
                     new JsonArray().add(new JsonObject().putString("startkey", "_design")).add(new JsonObject()
                             .putString("endkey", "_e")).add(new JsonObject().putBoolean("include_docs", true)));
+            dbCount++;
             eb.sendWithTimeout(allDocsAddress, designDocsMessage, timeout,
-                    new QueryDesignDocsHandler(db, startedResult));
+                    new QueryDesignDocsHandler(db));
+        }
+
+        private void checkCompleted() {
+            if (completed && dbCount == 0) {
+                startedResult.setResult(null);
+            }
         }
 
         private class QueryDesignDocsHandler implements AsyncResultHandler<Message<JsonObject>> {
 
             private final String db;
-            private final Future<Void> startedResult;
 
-            public QueryDesignDocsHandler(final String db, final Future<Void> startedResult) {
+            public QueryDesignDocsHandler(final String db) {
                 this.db = db;
-                this.startedResult = startedResult;
             }
 
             @Override
@@ -273,8 +290,6 @@ public class CouchdbVerticle extends BusModBase {
                                 logger.debug(String.format("view name: %1$s", viewName));
                             final String viewURI = String.format("/%1$s/%2$s/_view/%3$s", db,
                                     ((JsonObject) row).getString("id"), viewName);
-                            if (logger.isDebugEnabled())
-                                logger.debug(String.format("registering handler %1$s", viewURI));
 
                             // /db/_design/docid/_view/viewname handler
                             if (logger.isDebugEnabled())
@@ -282,11 +297,11 @@ public class CouchdbVerticle extends BusModBase {
                             eb.registerHandler(viewURI, new CouchdbRequestHandler(viewURI));
                         }
                     }
-                    startedResult.setResult(null);
+                    dbCount--;
+                    checkCompleted();
                 } else {
                     logger.error(String.format("failed to query design docs for db %1$s",
                             db), designDocsResult.cause());
-                    startedResult.setFailure(designDocsResult.cause());
                 }
             }
         }

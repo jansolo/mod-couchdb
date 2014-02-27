@@ -1,0 +1,10 @@
+{
+  "_id": "_design/dummy",
+  "views": {
+    "all": {
+      "map": "function(doc) {\n  emit(doc._id, 1);\n}",
+      "reduce": "_count"
+    }
+  },
+  "language": "javascript"
+}
