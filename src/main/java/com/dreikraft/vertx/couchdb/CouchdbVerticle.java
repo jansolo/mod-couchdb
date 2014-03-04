@@ -13,9 +13,11 @@ import org.vertx.java.core.http.HttpClientResponse;
 import org.vertx.java.core.json.JsonArray;
 import org.vertx.java.core.json.JsonObject;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.net.HttpURLConnection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Registers event bus handlers for CouchDb API methods.
@@ -26,7 +28,10 @@ public class CouchdbVerticle extends BusModBase {
     public static final String ADDRESS_DB = "/%1$s";
     public static final String ADDRESS_ALL_DBS = "/_all_dbs";
     public static final String ADDRESS_ALL_DOCS = "/%1$s/_all_docs";
-    public static final String ADDRESS_VIEW = "/%1$s/_design/%2$s/_view/%3$s";
+    public static final String ADDRESS_BULK_DOCS = "/%1$s/_bulk_docs";
+    public static final String ADDRESS_VIEW = "/%1$s/%2$s/_view/%3$s";
+    public static final String ADDRESS_REFLECT = "/_reflect";
+
 
     private String host;
     private int port;
@@ -63,10 +68,33 @@ public class CouchdbVerticle extends BusModBase {
         if (logger.isDebugEnabled())
             logger.debug(String.format("registering handler %1$s", ADDRESS_ALL_DBS));
         eb.registerHandler(ADDRESS_ALL_DBS, new CouchdbRequestHandler(ADDRESS_ALL_DBS));
-        eb.sendWithTimeout(ADDRESS_ALL_DBS, new JsonObject(), timeout, new DbReflectionHandler(startedResult));
+
+        // /_reflect handler
+        if (logger.isDebugEnabled())
+            logger.debug(String.format("registering handler %1$s", ADDRESS_REFLECT));
+        eb.registerHandler(ADDRESS_REFLECT, new ReflectHandler());
+
+        if (getOptionalBooleanConfig("registerDbHandlers", true)) {
+            // register all db handlers
+            eb.sendWithTimeout(ADDRESS_REFLECT, new JsonObject(), timeout,
+                    new AsyncResultHandler<Message<JsonObject>>() {
+                        @Override
+                        public void handle(final AsyncResult<Message<JsonObject>> reflectServerMessage) {
+                            if (reflectServerMessage.succeeded()) {
+                                startedResult.setResult(null);
+                            } else {
+                                logger.error(String.format("failed to start CouchdbVerticle: %1$s",
+                                        reflectServerMessage.cause()));
+                                startedResult.setFailure(reflectServerMessage.cause());
+                            }
+                        }
+                    });
+        } else {
+            startedResult.setResult(null);
+        }
     }
 
-    private class CouchdbRequestHandler implements Handler<Message<JsonObject>> {
+    private final class CouchdbRequestHandler implements Handler<Message<JsonObject>> {
 
         private String address;
 
@@ -106,22 +134,12 @@ public class CouchdbVerticle extends BusModBase {
                 logger.debug(String.format("executing request: %1$s %2$s %3$s", method, couchdbUri.toString(),
                         body != null ? body : ""));
 
-            final HttpClient httpClient = vertx.createHttpClient().setHost(host).setPort(port);
-            final Handler<HttpClientResponse> responseHandler = new ResponseHandler(requestMsg);
-            final Handler<Throwable> requestExcHandler = new RequestExceptionHandler(couchdbUri, requestMsg);
+            final HttpClient httpClient = vertx.createHttpClient().setHost(host).setPort(port).exceptionHandler(
+                    new RequestExceptionHandler(couchdbUri, requestMsg));
 
-            try {
-                final Method httpMethod = httpClient.getClass().getMethod(method.toLowerCase(), String.class,
-                        Handler.class);
-                final HttpClientRequest request = (HttpClientRequest)httpMethod.invoke(httpClient,
-                        couchdbUri.toString(), responseHandler);
-                putBaseAuth(putBody(putHeaders(request, headers), body)).end();
-            } catch (NoSuchMethodException | InvocationTargetException | IllegalAccessException ex) {
-                final String errorMsg = String.format("failed to process %1$s: ", couchdbUri.toString(),
-                        ex.getMessage());
-                logger.error(errorMsg, ex);
-                requestMsg.fail(500, errorMsg);
-            }
+            final HttpClientRequest request = httpClient.request(method, couchdbUri.toString(),
+                    new ResponseHandler(requestMsg));
+            putBaseAuth(putBody(putHeaders(request, headers), body)).end();
         }
 
         private HttpClientRequest putBody(final HttpClientRequest request, final JsonObject body) {
@@ -152,7 +170,7 @@ public class CouchdbVerticle extends BusModBase {
             return request;
         }
 
-        private class ResponseHandler implements Handler<HttpClientResponse> {
+        private final class ResponseHandler implements Handler<HttpClientResponse> {
 
             private Message<JsonObject> requestMsg;
 
@@ -190,7 +208,7 @@ public class CouchdbVerticle extends BusModBase {
             }
         }
 
-        private class RequestExceptionHandler implements Handler<Throwable> {
+        private final class RequestExceptionHandler implements Handler<Throwable> {
             private final StringBuilder queryUri;
             private final Message<JsonObject> requestMsg;
 
@@ -209,72 +227,99 @@ public class CouchdbVerticle extends BusModBase {
         }
     }
 
-    private class DbReflectionHandler implements AsyncResultHandler<Message<JsonArray>> {
+    private final class ReflectHandler implements Handler<Message<JsonObject>> {
 
-        private final Future<Void> startedResult;
-        private boolean completed = false;
-        private int dbCount = 0;
+        private int dbsProcessed;
+        private int dbsCount;
+        private Message<JsonObject> reflectServerMsg;
+        private Map<String, Set<HandlerEntry>> dbsHandlerEntries;
 
-        public DbReflectionHandler(final Future<Void> startedResult) {
-            this.startedResult = startedResult;
+        private ReflectHandler() {
+            dbsHandlerEntries = new HashMap<>();
         }
 
         @Override
-        public void handle(final AsyncResult<Message<JsonArray>> allDbsReply) {
-            if (allDbsReply.succeeded()) {
-                final boolean excludeSysDbs = getOptionalBooleanConfig("excludeSysDbs", true);
-                for (final Object db : allDbsReply.result().body()) {
-                    if (!(excludeSysDbs && db.toString().startsWith("_"))) {
-
-                        // /db/doc handler
-                        final String dbName = db.toString();
-                        final String dbAddress = String.format(ADDRESS_DB, dbName);
-                        if (logger.isDebugEnabled())
-                            logger.debug(String.format("registering handler %1$s", dbAddress));
-                        eb.registerHandler(dbAddress, new CouchdbRequestHandler(dbAddress));
-
-                        // /db/_all_docs handler
-                        final String allDocsAddress = String.format(ADDRESS_ALL_DOCS, dbName);
-                        if (logger.isDebugEnabled())
-                            logger.debug(String.format("registering handler %1$s", allDocsAddress));
-                        eb.registerHandler(allDocsAddress, new CouchdbRequestHandler(allDocsAddress));
-
-                        // TODO register missing db/doc API handlers
-
-                        // /db/_design/docid/_view/viewname handlers
-                        registerViewHandlers(allDocsAddress, dbName, startedResult);
-                    }
-                }
-                completed = true;
-                checkCompleted();
+        public void handle(final Message<JsonObject> reflectServerMsg) {
+            this.reflectServerMsg = reflectServerMsg;
+            final String db = reflectServerMsg.body().getString("db");
+            dbsProcessed = 0;
+            if (db != null) {
+                dbsCount = 1;
+                registerDbHandlers(db);
             } else {
-                logger.error(String.format("failed reflect couchdb: %1$s", allDbsReply.cause().getMessage()),
-                        allDbsReply.cause());
-                startedResult.setFailure(allDbsReply.cause());
+                eb.sendWithTimeout(ADDRESS_ALL_DBS, new JsonObject(), timeout, new AsyncResultHandler<Message<JsonArray>>() {
+                    @Override
+                    public void handle(final AsyncResult<Message<JsonArray>> allDbsReply) {
+                        if (allDbsReply.succeeded()) {
+                            dbsCount = allDbsReply.result().body().size();
+                            for (final Object dbObj : allDbsReply.result().body()) {
+                                registerDbHandlers(dbObj.toString());
+                            }
+                            replyOnComplete();
+                        } else {
+                            final String errMsg = String.format("failed to reflect couchdb server: %1$s",
+                                    allDbsReply.cause().getMessage());
+                            logger.error(errMsg, allDbsReply.cause());
+                            reflectServerMsg.fail(500, allDbsReply.cause().getMessage());
+                        }
+                    }
+                });
             }
         }
 
-        private void registerViewHandlers(final String allDocsAddress, final String db,
-                                          final Future<Void> startedResult) {
-            if (logger.isDebugEnabled())
-                logger.debug(String.format("registering handler %1$s", allDocsAddress));
+        private void replyOnComplete() {
+            if (dbsProcessed == dbsCount) {
+                reflectServerMsg.reply(new JsonObject().putBoolean("ok", true).putNumber("count", dbsCount));
+            }
+        }
 
+        private void registerDbHandlers(final String db) {
+
+            if (dbsHandlerEntries.containsKey(db)) {
+                for (final HandlerEntry dbHandlerEntry : dbsHandlerEntries.get(db)) {
+                    if (logger.isDebugEnabled())
+                        logger.debug(String.format("unregistering handler %1$s", dbHandlerEntry.getAddress()));
+                    eb.unregisterHandler(dbHandlerEntry.getAddress(), dbHandlerEntry.getHandler());
+                }
+            }
+            final Set<HandlerEntry> dbHandlerEntries = new HashSet<>();
+            dbsHandlerEntries.put(db, dbHandlerEntries);
+
+            // /db/doc handler
+            final String dbAddress = String.format(ADDRESS_DB, db);
+            dbHandlerEntries.add(new HandlerEntry(dbAddress, new CouchdbRequestHandler(dbAddress)));
+
+            // /db/_all_docs handler
+            final String allDocsAddress = String.format(ADDRESS_ALL_DOCS, db);
+            dbHandlerEntries.add(new HandlerEntry(allDocsAddress, new CouchdbRequestHandler(allDocsAddress)));
+
+            // /db/_bulk_docs handler
+            final String bulkDocsAddress = String.format(ADDRESS_BULK_DOCS, db);
+            dbHandlerEntries.add(new HandlerEntry(bulkDocsAddress, new CouchdbRequestHandler(bulkDocsAddress)));
+
+            for (final HandlerEntry dbHandlerEntry : dbsHandlerEntries.get(db)) {
+                if (logger.isDebugEnabled())
+                    logger.debug(String.format("registering handler %1$s", dbHandlerEntry.getAddress()));
+                eb.registerHandler(dbHandlerEntry.getAddress(), dbHandlerEntry.getHandler());
+            }
+
+            // TODO register missing db/doc API handlers
+
+            // /db/_design/docid/_view/viewname handlers
+            registerViewHandlers(db);
+        }
+
+        private void registerViewHandlers(final String db) {
             // get design docs and views
+            final String allDocsAddress = String.format(ADDRESS_ALL_DOCS, db);
             final JsonObject designDocsMessage = new JsonObject().putArray("params",
                     new JsonArray().add(new JsonObject().putString("startkey", "_design")).add(new JsonObject()
                             .putString("endkey", "_e")).add(new JsonObject().putBoolean("include_docs", true)));
-            dbCount++;
             eb.sendWithTimeout(allDocsAddress, designDocsMessage, timeout,
                     new QueryDesignDocsHandler(db));
         }
 
-        private void checkCompleted() {
-            if (completed && dbCount == 0) {
-                startedResult.setResult(null);
-            }
-        }
-
-        private class QueryDesignDocsHandler implements AsyncResultHandler<Message<JsonObject>> {
+        private final class QueryDesignDocsHandler implements AsyncResultHandler<Message<JsonObject>> {
 
             private final String db;
 
@@ -295,22 +340,43 @@ public class CouchdbVerticle extends BusModBase {
                         for (final String viewName : views.getFieldNames()) {
                             if (logger.isDebugEnabled())
                                 logger.debug(String.format("view name: %1$s", viewName));
-                            final String viewURI = String.format("/%1$s/%2$s/_view/%3$s", db,
+                            final String viewURI = String.format(ADDRESS_VIEW, db,
                                     ((JsonObject) row).getString("id"), viewName);
 
                             // /db/_design/docid/_view/viewname handler
                             if (logger.isDebugEnabled())
                                 logger.debug(String.format("registering handler %1$s", viewURI));
-                            eb.registerHandler(viewURI, new CouchdbRequestHandler(viewURI));
+                            final Handler<Message<JsonObject>> viewHandler = new CouchdbRequestHandler(viewURI);
+                            dbsHandlerEntries.get(db).add(new HandlerEntry(viewURI, viewHandler));
+                            eb.registerHandler(viewURI, viewHandler);
                         }
                     }
-                    dbCount--;
-                    checkCompleted();
                 } else {
                     logger.error(String.format("failed to query design docs for db %1$s",
                             db), designDocsResult.cause());
                 }
+                dbsProcessed++;
+                replyOnComplete();
             }
         }
+
+        private final class HandlerEntry {
+            private final String address;
+            private final Handler<Message<JsonObject>> handler;
+
+            private HandlerEntry(final String address, final Handler<Message<JsonObject>> handler) {
+                this.address = address;
+                this.handler = handler;
+            }
+
+            public String getAddress() {
+                return address;
+            }
+
+            public Handler<Message<JsonObject>> getHandler() {
+                return handler;
+            }
+        }
+
     }
 }

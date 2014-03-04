@@ -1,0 +1,26 @@
+{
+    "docs": [
+        {
+          "_id": "dummy1",
+          "name": "dummy1"
+        },
+        {
+          "_id": "dummy2",
+          "name": "dummy2"
+        },
+        {
+          "_id": "dummy2",
+          "name": "dummy2"
+        },
+        {
+          "_id": "_design/dummy",
+          "views": {
+            "all": {
+              "map": "function(doc) {\n  emit(doc._id, 1);\n}",
+              "reduce": "_count"
+            }
+          },
+          "language": "javascript"
+        }
+    ]
+}
