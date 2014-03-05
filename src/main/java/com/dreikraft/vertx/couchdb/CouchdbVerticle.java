@@ -337,18 +337,20 @@ public class CouchdbVerticle extends BusModBase {
                     for (final Object row : rows) {
                         final JsonObject designDoc = ((JsonObject) row).getObject("doc");
                         final JsonObject views = designDoc.getObject("views");
-                        for (final String viewName : views.getFieldNames()) {
-                            if (logger.isDebugEnabled())
-                                logger.debug(String.format("view name: %1$s", viewName));
-                            final String viewURI = String.format(ADDRESS_VIEW, db,
-                                    ((JsonObject) row).getString("id"), viewName);
+                        if (views != null && views.getFieldNames() != null) {
+                            for (final String viewName : views.getFieldNames()) {
+                                if (logger.isDebugEnabled())
+                                    logger.debug(String.format("view name: %1$s", viewName));
+                                final String viewURI = String.format(ADDRESS_VIEW, db,
+                                        ((JsonObject) row).getString("id"), viewName);
 
-                            // /db/_design/docid/_view/viewname handler
-                            if (logger.isDebugEnabled())
-                                logger.debug(String.format("registering handler %1$s", viewURI));
-                            final Handler<Message<JsonObject>> viewHandler = new CouchdbRequestHandler(viewURI);
-                            dbsHandlerEntries.get(db).add(new HandlerEntry(viewURI, viewHandler));
-                            eb.registerHandler(viewURI, viewHandler);
+                                // /db/_design/docid/_view/viewname handler
+                                if (logger.isDebugEnabled())
+                                    logger.debug(String.format("registering handler %1$s", viewURI));
+                                final Handler<Message<JsonObject>> viewHandler = new CouchdbRequestHandler(viewURI);
+                                dbsHandlerEntries.get(db).add(new HandlerEntry(viewURI, viewHandler));
+                                eb.registerHandler(viewURI, viewHandler);
+                            }
                         }
                     }
                 } else {
