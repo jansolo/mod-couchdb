@@ -20,18 +20,128 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Registers event bus handlers for CouchDb API methods.
+ * Wraps the the couchdb API into vert.x event bus calls. Registers event bus handlers for CouchDb API methods.
+ * <p/>
+ * Supported configuration parameters:
+ * <p/>
+ * <ul>
+ * <li><code>host: String</code> ... The hostname of the couchdb server; defaults to <code>localhost</code></li>
+ * <li><code>port: int</code> ... The port of the couchdb server; defaults to <code>5984</code></li>
+ * <li><code>timeout: long</code> ... The request timeout until a call is considered failed; defaults to
+ * <code>10000</code> msec</li>
+ * <li><code>user: String</code> ... A couchdb username; optional; defaults to <code>null</code></li>
+ * <li><code>passwd: String</code> ... A couchdb password; optional; defaults to <code>null</code></li>
+ * </ul>
+ * <p/>
+ * Call parameters, http method, database name, request headers and document ids can be passed wrapped into a
+ * JsonObject.
+ * <p/>
+ * Get all databases in a couchdb server instance:
+ * <ul>
+ * <li>address: <code>couchdb:/_all_dbs</code></li>
+ * <li>message: <code>{}</code></li>
+ * <li>reply: <code>["_replicator","_users","dummy","test_suite_db","test_suite_db2"]
+ </code></li>
+ * </ul>
+ * <p/>
+ * Create a db:
+ * <ul>
+ * <li>address: <code>couchdb:/</code></li>
+ * <li>message: <code>{"method":"PUT","db":"dummy"}</code></li>
+ * <li>reply: <code>{"ok":true}</code></li>
+ * </ul>
+ * <p/>
+ * Delete a db:
+ * <ul>
+ * <li>address: <code>couchdb:/</code></li>
+ * <li>message: <code>{"method":"DELETE","db":"dummy"}</code></li>
+ * <li>reply: <code>{"ok":true}</code></li>
+ * </ul>
+ * <p/>
+ * Bulk load documents into a database:
+ * <ul>
+ * <li>address: <code>couchdb:/dummy/_bulk_docs</code></li>
+ * <li>message: <code>{"method":"POST","body":{"docs":[{"_id":"dummy1","name":"dummy1"},{"_id":"dummy2","name":"dummy2"}]}}</code></li>
+ * <li>reply: <code>[{"ok":true,"id":"dummy1","rev":"1-8cf73467930ed4ce09baf4067f866696"},{"ok":true,"id":"dummy2","rev":"1-63d558a16704329a6fc5a1f62bef77a3"}]</code></li>
+ * </ul>
+ * <p/>
+ * Create a document:
+ * <ul>
+ * <li>address: <code>couchdb:/</code></li>
+ * <li>message: <code>{"method":"POST","db":"dummy","body":{"dummy":"dummy"}}</code></li>
+ * <li>reply: <code>{"ok":true,"id":"982ad9b754f4cbce7537729f2800316e","rev":"1-d464c04beb102488a01910290d137c46"}</code></li>
+ * </ul>
+ * <p/>
+ * Get a document:
+ * <ul>
+ * <li>address: <code>couchdb:/dummy</code></li>
+ * <li>message: <code>{"id":"dummy1"}</code></li>
+ * <li>reply: <code>{"_id":"dummy1","_rev":"1-8cf73467930ed4ce09baf4067f866696","name":"dummy1"}</code></li>
+ * </ul>
+ * <p/>
+ * Query all docs for a view:
+ * <ul>
+ * <li>address: <code>couchdb:/dummy/_all_docs</code></li>
+ * <li>message: <code>{"params":[{"include_docs":true}]}</code></li>
+ * <li>reply: <code>{"total_rows":1,"offset":0,"rows":[{"id":"dummy3","key":"dummy3","value":{"rev":"1-d7e7ace0fb165dcde4d0e9b3de99fbe1"},"doc":{"_id":"dummy3","_rev":"1-d7e7ace0fb165dcde4d0e9b3de99fbe1","name":"dummy3"}}]}</code></li>
+ * </ul>
+ * <p/>
+ * Query a view:
+ * <ul>
+ * <li>address: <code>couchdb:/dummy/_design/dummy/_view/all</code></li>
+ * <li>message: <code>{"params":[{"include_docs":true},{"reduce":false}]}</code></li>
+ * <li>reply: <code>{"total_rows":1,"offset":0,"rows":[{"id":"dummy1","key":"dummy1","value":1,"doc":{"_id":"dummy1","_rev":"1-8cf73467930ed4ce09baf4067f866696","name":"dummy1"}}]}</code></li>
+ * </ul>
+ * <p/>
+ * Register view handlers for a database:
+ * <ul>
+ * <li>address: <code>couchdb:/_reflect</code></li>
+ * <li>message: <code>{"db":"dummy"}</code></li>
+ * <li>reply: <code>{"ok":true,"count":1}</code></li>
+ * </ul>
+ * <p/>
+ * The handler will generate a reply the contains the JSON object/array returned from couchdb. In case of an error
+ * the handlers will send a ReplyException with the wrapped couchdb error.
+ *
+ * @author jansolo
  */
 public class CouchdbVerticle extends BusModBase {
 
-    public static final String ADDRESS_SERVER = "/";
-    public static final String ADDRESS_DB = "/%1$s";
-    public static final String ADDRESS_ALL_DBS = "/_all_dbs";
-    public static final String ADDRESS_ALL_DOCS = "/%1$s/_all_docs";
-    public static final String ADDRESS_BULK_DOCS = "/%1$s/_bulk_docs";
-    public static final String ADDRESS_VIEW = "/%1$s/%2$s/_view/%3$s";
-    public static final String ADDRESS_REFLECT = "/_reflect";
-
+    /**
+     * Prefix for event bus addresses {@value}.
+     */
+    public static final String ADDRESS_PREFIX = "couchdb:";
+    /**
+     * The event bus server address <code>{@value}</code> maps to couchdb API url <code>/</code>.
+     */
+    public static final String ADDRESS_SERVER = ADDRESS_PREFIX + "/";
+    /**
+     * The event bus database address <code>{@value}</code> maps to couchdb API url <code>/dbname</code>.
+     */
+    public static final String ADDRESS_DB = ADDRESS_PREFIX + "/%1$s";
+    /**
+     * The all databases view address <code>{@value}</code> maps to couchdb API url <code>/_all_dbs</code>.
+     */
+    public static final String ADDRESS_ALL_DBS = ADDRESS_PREFIX + "/_all_dbs";
+    /**
+     * The all database documents address <code>{@value}</code> maps to couchdb API url
+     * <code>/dbname/_all_docs</code>.
+     */
+    public static final String ADDRESS_ALL_DOCS = ADDRESS_PREFIX + "/%1$s/_all_docs";
+    /**
+     * The bulk docs address <code>{@value}</code> maps to couchdb API url <code>/dbname/_bulk_docs</code>.
+     */
+    public static final String ADDRESS_BULK_DOCS = ADDRESS_PREFIX + "/%1$s/_bulk_docs";
+    /**
+     * The view addresses <code>{@value}</code> map to couchdb API url
+     * <code>/dbname/_design/designDocId/_view/viewName</code>.
+     */
+    public static final String ADDRESS_VIEW = ADDRESS_PREFIX + "/%1$s/%2$s/_view/%3$s";
+    /**
+     * The reflect address <code>{@value}</code> registers handlers for a given database or if omitted for all
+     * databases in the server.
+     */
+    public static final String ADDRESS_REFLECT = ADDRESS_PREFIX + "/_reflect";
 
     private String host;
     private int port;
@@ -39,7 +149,7 @@ public class CouchdbVerticle extends BusModBase {
     private String baseAuth;
 
     /**
-     * Registers handlers for all databases and views in the given couchdb instance.
+     * Registers handlers for databases and views in a connected couchdb instance.
      *
      * @param startedResult the startup result
      */
@@ -74,26 +184,13 @@ public class CouchdbVerticle extends BusModBase {
             logger.debug(String.format("registering handler %1$s", ADDRESS_REFLECT));
         eb.registerHandler(ADDRESS_REFLECT, new ReflectHandler());
 
-        if (getOptionalBooleanConfig("registerDbHandlers", true)) {
-            // register all db handlers
-            eb.sendWithTimeout(ADDRESS_REFLECT, new JsonObject(), timeout,
-                    new AsyncResultHandler<Message<JsonObject>>() {
-                        @Override
-                        public void handle(final AsyncResult<Message<JsonObject>> reflectServerMessage) {
-                            if (reflectServerMessage.succeeded()) {
-                                startedResult.setResult(null);
-                            } else {
-                                logger.error(String.format("failed to start CouchdbVerticle: %1$s",
-                                        reflectServerMessage.cause()));
-                                startedResult.setFailure(reflectServerMessage.cause());
-                            }
-                        }
-                    });
-        } else {
-            startedResult.setResult(null);
-        }
+        startedResult.setResult(null);
     }
 
+    /**
+     * Handles couchdb requests received on the event bus and forwards the calls to couchdb. It registers a response
+     * handler that returns the results from couchdb.
+     */
     private final class CouchdbRequestHandler implements Handler<Message<JsonObject>> {
 
         private String address;
@@ -102,10 +199,24 @@ public class CouchdbVerticle extends BusModBase {
             this.address = address;
         }
 
+        /**
+         * Handles couchdb requests on the event bus.
+         *
+         * @param requestMsg the request message. E.g.:
+         *                   <code>
+         *                   {
+         *                   "body": {
+         *                   "dummy": "dummy"
+         *                   },
+         *                   "db": "dummy",
+         *                   "method": "POST"
+         *                   }
+         *                   </code>
+         */
         @Override
         public void handle(final Message<JsonObject> requestMsg) {
             final JsonObject json = requestMsg.body();
-            final StringBuilder couchdbUri = new StringBuilder(address);
+            final StringBuilder couchdbUri = new StringBuilder(address.substring(ADDRESS_PREFIX.length()));
             final String db = json.getString("db");
             if (db != null) {
                 couchdbUri.append(address.equals(ADDRESS_SERVER) ? "" : "/").append(db);
@@ -135,7 +246,7 @@ public class CouchdbVerticle extends BusModBase {
                         body != null ? body : ""));
 
             final HttpClient httpClient = vertx.createHttpClient().setHost(host).setPort(port).exceptionHandler(
-                    new RequestExceptionHandler(couchdbUri, requestMsg));
+                    new RequestExceptionHandler(couchdbUri.toString(), requestMsg));
 
             final HttpClientRequest request = httpClient.request(method, couchdbUri.toString(),
                     new ResponseHandler(requestMsg));
@@ -170,6 +281,9 @@ public class CouchdbVerticle extends BusModBase {
             return request;
         }
 
+        /**
+         * Handles responses from couchdb and passes the result into a message reply.
+         */
         private final class ResponseHandler implements Handler<HttpClientResponse> {
 
             private Message<JsonObject> requestMsg;
@@ -178,10 +292,20 @@ public class CouchdbVerticle extends BusModBase {
                 this.requestMsg = requestMsg;
             }
 
+            /**
+             * Handles couchdb responses.
+             *
+             * @param response a response from couchdb (a JSON object/array)
+             */
             @Override
             public void handle(final HttpClientResponse response) {
                 if (response.statusCode() < HttpURLConnection.HTTP_INTERNAL_ERROR) {
                     response.bodyHandler(new Handler<Buffer>() {
+
+                        /**
+                         * The result body handler. Returns a JSON object, a JSON array, a String or a ReplyException.
+                         * @param body the response body
+                         */
                         @Override
                         public void handle(final Buffer body) {
                             if (response.statusCode() >= HttpURLConnection.HTTP_OK
@@ -208,25 +332,42 @@ public class CouchdbVerticle extends BusModBase {
             }
         }
 
+        /**
+         * Handles exceptions while performing the couchdb http request.
+         */
         private final class RequestExceptionHandler implements Handler<Throwable> {
-            private final StringBuilder queryUri;
+            private final String queryUri;
             private final Message<JsonObject> requestMsg;
 
-            public RequestExceptionHandler(StringBuilder queryUri, Message<JsonObject> requestMsg) {
+            /**
+             * Creates the handler.
+             *
+             * @param queryUri   request uri
+             * @param requestMsg the request message
+             */
+            public RequestExceptionHandler(final String queryUri, final Message<JsonObject> requestMsg) {
                 this.queryUri = queryUri;
                 this.requestMsg = requestMsg;
             }
 
+            /**
+             * Logs the exception and returns a ReplyException on the request message
+             *
+             * @param t a causing exception
+             */
             @Override
             public void handle(final Throwable t) {
-                final String errMsg = String.format("failed to query %1$s: %2$s",
-                        queryUri.toString(), t.getMessage());
+                final String errMsg = String.format("failed to query %1$s: %2$s", queryUri, t.getMessage());
                 logger.error(errMsg, t);
                 requestMsg.fail(500, errMsg);
             }
         }
     }
 
+    /**
+     * Performs a reflection a database or all databases in a couchdb server. Finds all db/view urls and registers
+     * handlers for the urls.
+     */
     private final class ReflectHandler implements Handler<Message<JsonObject>> {
 
         private int dbsProcessed;
@@ -238,6 +379,10 @@ public class CouchdbVerticle extends BusModBase {
             dbsHandlerEntries = new HashMap<>();
         }
 
+        /**
+         * Handles the <code>/_reflect</code> event.
+         * @param reflectServerMsg
+         */
         @Override
         public void handle(final Message<JsonObject> reflectServerMsg) {
             this.reflectServerMsg = reflectServerMsg;
@@ -319,6 +464,9 @@ public class CouchdbVerticle extends BusModBase {
                     new QueryDesignDocsHandler(db));
         }
 
+        /**
+         * A handler to register handler addresses on the event bus for all design documents views found in a database.
+         */
         private final class QueryDesignDocsHandler implements AsyncResultHandler<Message<JsonObject>> {
 
             private final String db;
@@ -327,6 +475,10 @@ public class CouchdbVerticle extends BusModBase {
                 this.db = db;
             }
 
+            /**
+             * Handles found design docs.
+             * @param designDocsResult design docs for a database returned from couchdb.
+             */
             @Override
             public void handle(final AsyncResult<Message<JsonObject>> designDocsResult) {
                 if (designDocsResult.succeeded()) {
@@ -362,6 +514,9 @@ public class CouchdbVerticle extends BusModBase {
             }
         }
 
+        /**
+         * Stores address/handler mappings required for deregistering handlers.
+         */
         private final class HandlerEntry {
             private final String address;
             private final Handler<Message<JsonObject>> handler;
@@ -371,14 +526,21 @@ public class CouchdbVerticle extends BusModBase {
                 this.handler = handler;
             }
 
+            /**
+             * Returns the address of the handler.
+             * @return a address string
+             */
             public String getAddress() {
                 return address;
             }
 
+            /**
+             * Returns the vert.x event handler.
+             * @return a handler
+             */
             public Handler<Message<JsonObject>> getHandler() {
                 return handler;
             }
         }
-
     }
 }
