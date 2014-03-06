@@ -78,29 +78,29 @@ Please edit the details below.
 def configurePom(def pom) {
   pom.project {
     name rootProject.name
-    description 'Description of your module here'
-    inceptionYear '2013'
+    description 'A event bus wrapper for the couchdb API.'
+    inceptionYear '2014'
     packaging 'jar'
 
-    url 'Your project url'
+    url 'http://github.com/jansolo/mod-couchdb'
 
     developers {
       developer {
-        id 'developer id (e.g. github username)'
-        name 'developer name'
-        email 'developer email'
+          id 'jansolo'
+          name 'Jan Illetschko'
+          email 'jan.illetschko@3kraft.com'
       }
     }
 
     scm {
-      url 'url to your repo - e.g. github repo url'
+        url 'http://github.com/jansolo/mod-couchdb'
     }
 
     licenses {
       license {
-        name 'The name of the license used, e.g.: The Apache Software License, Version 2.0'
-        url 'URl to the license, e.g.: http://www.apache.org/licenses/LICENSE-2.0.txt'
-        distribution 'repo'
+          name 'The Apache Software License, Version 2.0'
+          url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+          distribution 'repo'
       }
     }
 
