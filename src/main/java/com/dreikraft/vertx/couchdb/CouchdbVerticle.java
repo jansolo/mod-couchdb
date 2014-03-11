@@ -41,7 +41,7 @@ import java.util.Set;
  * <li>address: <code>couchdb:/_all_dbs</code></li>
  * <li>message: <code>{}</code></li>
  * <li>reply: <code>["_replicator","_users","dummy","test_suite_db","test_suite_db2"]
- </code></li>
+ * </code></li>
  * </ul>
  * <p/>
  * Create a db:
@@ -146,7 +146,8 @@ public class CouchdbVerticle extends BusModBase {
     private String host;
     private int port;
     private long timeout;
-    private String baseAuth;
+    private String user;
+    private String passwd;
 
     /**
      * Registers handlers for databases and views in a connected couchdb instance.
@@ -161,12 +162,8 @@ public class CouchdbVerticle extends BusModBase {
         host = getOptionalStringConfig("host", "localhost");
         port = getOptionalIntConfig("port", 5984);
         timeout = getOptionalLongConfig("timeout", 10000);
-        final String user = getOptionalStringConfig("user", null);
-        final String passwd = getOptionalStringConfig("passwd", null);
-        if (user != null && passwd != null) {
-            baseAuth = new StringBuilder("Basic ").append(new JsonObject().putBinary("baseAuth",
-                    String.format("%1$s:%2$s", user, passwd).getBytes()).getString("baseAuth")).toString();
-        }
+        user = getOptionalStringConfig("user", null);
+        passwd = getOptionalStringConfig("passwd", null);
 
         // TODO register couchdb server API handlers
         // couchdb server handler
@@ -240,6 +237,8 @@ public class CouchdbVerticle extends BusModBase {
             final JsonArray headers = json.getArray("headers");
             final String method = json.getString("method", "GET");
             final JsonObject body = json.getObject("body");
+            final String requestUser = json.getString("user", user);
+            final String requestPasswd = json.getString("passwd", passwd);
 
             if (logger.isDebugEnabled())
                 logger.debug(String.format("executing request: %1$s %2$s %3$s", method, couchdbUri.toString(),
@@ -250,7 +249,7 @@ public class CouchdbVerticle extends BusModBase {
 
             final HttpClientRequest request = httpClient.request(method, couchdbUri.toString(),
                     new ResponseHandler(requestMsg));
-            putBaseAuth(putBody(putHeaders(request, headers), body)).end();
+            putBaseAuth(putBody(putHeaders(request, headers), body), requestUser, requestPasswd).end();
         }
 
         private HttpClientRequest putBody(final HttpClientRequest request, final JsonObject body) {
@@ -262,9 +261,12 @@ public class CouchdbVerticle extends BusModBase {
             return request;
         }
 
-        private HttpClientRequest putBaseAuth(final HttpClientRequest request) {
-            if (baseAuth != null) {
-                request.putHeader("Authorization", baseAuth);
+        private HttpClientRequest putBaseAuth(final HttpClientRequest request, final String user,
+                                              final String passwd) {
+            if (user != null && passwd != null) {
+                request.putHeader("Authorization", new StringBuilder("Basic ").append(
+                        new JsonObject().putBinary("baseAuth", String.format("%1$s:%2$s", user, passwd).getBytes())
+                                .getString("baseAuth")).toString());
             }
             return request;
         }
@@ -381,6 +383,7 @@ public class CouchdbVerticle extends BusModBase {
 
         /**
          * Handles the <code>/_reflect</code> event.
+         *
          * @param reflectServerMsg
          */
         @Override
@@ -477,6 +480,7 @@ public class CouchdbVerticle extends BusModBase {
 
             /**
              * Handles found design docs.
+             *
              * @param designDocsResult design docs for a database returned from couchdb.
              */
             @Override
@@ -528,6 +532,7 @@ public class CouchdbVerticle extends BusModBase {
 
             /**
              * Returns the address of the handler.
+             *
              * @return a address string
              */
             public String getAddress() {
@@ -536,6 +541,7 @@ public class CouchdbVerticle extends BusModBase {
 
             /**
              * Returns the vert.x event handler.
+             *
              * @return a handler
              */
             public Handler<Message<JsonObject>> getHandler() {
