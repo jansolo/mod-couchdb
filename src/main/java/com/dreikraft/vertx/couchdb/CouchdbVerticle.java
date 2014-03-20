@@ -21,9 +21,8 @@ import java.util.Set;
 
 /**
  * Wraps the the couchdb API into vert.x event bus calls. Registers event bus handlers for CouchDb API methods.
- * <p/>
+ *
  * Supported configuration parameters:
- * <p/>
  * <ul>
  * <li><code>host: String</code> ... The hostname of the couchdb server; defaults to <code>localhost</code></li>
  * <li><code>port: int</code> ... The port of the couchdb server; defaults to <code>5984</code></li>
@@ -32,10 +31,10 @@ import java.util.Set;
  * <li><code>user: String</code> ... A couchdb username; optional; defaults to <code>null</code></li>
  * <li><code>passwd: String</code> ... A couchdb password; optional; defaults to <code>null</code></li>
  * </ul>
- * <p/>
+ *
  * Call parameters, http method, database name, request headers and document ids can be passed wrapped into a
  * JsonObject.
- * <p/>
+
  * Get all databases in a couchdb server instance:
  * <ul>
  * <li>address: <code>couchdb:/_all_dbs</code></li>
@@ -43,63 +42,63 @@ import java.util.Set;
  * <li>reply: <code>{"body": ["_replicator","_users","dummy","test_suite_db","test_suite_db2"], "status": "ok"}
  * </code></li>
  * </ul>
- * <p/>
+ *
  * Create a db:
  * <ul>
  * <li>address: <code>couchdb:/</code></li>
  * <li>message: <code>{"method":"PUT","db":"dummy"}</code></li>
  * <li>reply: <code>{"body": {"ok":true}, "status": "ok"}</code></li>
  * </ul>
- * <p/>
+ *
  * Delete a db:
  * <ul>
  * <li>address: <code>couchdb:/</code></li>
  * <li>message: <code>{"method":"DELETE","db":"dummy"}</code></li>
  * <li>reply: <code>{"body": {"ok":true}, "status": "ok"}</code></li>
  * </ul>
- * <p/>
+ *
  * Bulk load documents into a database:
  * <ul>
  * <li>address: <code>couchdb:/dummy/_bulk_docs</code></li>
  * <li>message: <code>{"method":"POST","body":{"docs":[{"_id":"dummy1","name":"dummy1"},{"_id":"dummy2","name":"dummy2"}]}}</code></li>
  * <li>reply: <code>{"body": [{"ok":true,"id":"dummy1","rev":"1-8cf73467930ed4ce09baf4067f866696"},{"ok":true,"id":"dummy2","rev":"1-63d558a16704329a6fc5a1f62bef77a3"}], "status": "ok"}</code></li>
  * </ul>
- * <p/>
+ *
  * Create a document:
  * <ul>
  * <li>address: <code>couchdb:/</code></li>
  * <li>message: <code>{"method":"POST","db":"dummy","body":{"dummy":"dummy"}}</code></li>
  * <li>reply: <code>{"body": {"ok":true,"id":"982ad9b754f4cbce7537729f2800316e","rev":"1-d464c04beb102488a01910290d137c46"}, "status": "ok"}</code></li>
  * </ul>
- * <p/>
+ *
  * Get a document:
  * <ul>
  * <li>address: <code>couchdb:/dummy</code></li>
  * <li>message: <code>{"id":"dummy1"}</code></li>
  * <li>reply: <code>{"body": {"_id":"dummy1","_rev":"1-8cf73467930ed4ce09baf4067f866696","name":"dummy1"}, "status": "ok"}</code></li>
  * </ul>
- * <p/>
+ *
  * Query all docs for a view:
  * <ul>
  * <li>address: <code>couchdb:/dummy/_all_docs</code></li>
  * <li>message: <code>{"params":[{"include_docs":true}]}</code></li>
  * <li>reply: <code>{"body": {"total_rows":1,"offset":0,"rows":[{"id":"dummy3","key":"dummy3","value":{"rev":"1-d7e7ace0fb165dcde4d0e9b3de99fbe1"},"doc":{"_id":"dummy3","_rev":"1-d7e7ace0fb165dcde4d0e9b3de99fbe1","name":"dummy3"}}]}, "status": "ok"}</code></li>
  * </ul>
- * <p/>
+ *
  * Query a view:
  * <ul>
  * <li>address: <code>couchdb:/dummy/_design/dummy/_view/all</code></li>
  * <li>message: <code>{"params":[{"include_docs":true},{"reduce":false}]}</code></li>
  * <li>reply: <code>{"body": {"total_rows":1,"offset":0,"rows":[{"id":"dummy1","key":"dummy1","value":1,"doc":{"_id":"dummy1","_rev":"1-8cf73467930ed4ce09baf4067f866696","name":"dummy1"}}]}, "status": "ok"}</code></li>
  * </ul>
- * <p/>
+ *
  * Register view handlers for a database:
  * <ul>
  * <li>address: <code>couchdb:/_reflect</code></li>
  * <li>message: <code>{"db":"dummy"}</code></li>
  * <li>reply: <code>{"body": {"ok":true,"count":1}, "status": "ok"}</code></li>
  * </ul>
- * <p/>
+ *
  * The handler will generate a reply the contains the JSON object/array returned from couchdb. In case of an error
  * the handlers will send a ReplyException with the wrapped couchdb error.
  *

@@ -16,7 +16,7 @@ public class CouchdbInitVerticle extends BusModBase {
 
     /**
      * Starts x instances of the CouchdbVerticle.
-     * <p/>
+     *
      * Supports following config parameters:
      * <ul>
      * <li>instances:<code>int</code> ... Number of CouchdbVerticle instances to start;
@@ -26,7 +26,7 @@ public class CouchdbInitVerticle extends BusModBase {
      * <li>timeout:<code>long</code> ... timeout until startup is considered failed</li>
      * </ul>
      *
-     * @param startedResult
+     * @param startedResult the startup result
      */
     @Override
     public void start(final Future<Void> startedResult) {
