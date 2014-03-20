@@ -40,7 +40,7 @@ import java.util.Set;
  * <ul>
  * <li>address: <code>couchdb:/_all_dbs</code></li>
  * <li>message: <code>{}</code></li>
- * <li>reply: <code>["_replicator","_users","dummy","test_suite_db","test_suite_db2"]
+ * <li>reply: <code>{"body": ["_replicator","_users","dummy","test_suite_db","test_suite_db2"], "status": "ok"}
  * </code></li>
  * </ul>
  * <p/>
@@ -48,56 +48,56 @@ import java.util.Set;
  * <ul>
  * <li>address: <code>couchdb:/</code></li>
  * <li>message: <code>{"method":"PUT","db":"dummy"}</code></li>
- * <li>reply: <code>{"ok":true}</code></li>
+ * <li>reply: <code>{"body": {"ok":true}, "status": "ok"}</code></li>
  * </ul>
  * <p/>
  * Delete a db:
  * <ul>
  * <li>address: <code>couchdb:/</code></li>
  * <li>message: <code>{"method":"DELETE","db":"dummy"}</code></li>
- * <li>reply: <code>{"ok":true}</code></li>
+ * <li>reply: <code>{"body": {"ok":true}, "status": "ok"}</code></li>
  * </ul>
  * <p/>
  * Bulk load documents into a database:
  * <ul>
  * <li>address: <code>couchdb:/dummy/_bulk_docs</code></li>
  * <li>message: <code>{"method":"POST","body":{"docs":[{"_id":"dummy1","name":"dummy1"},{"_id":"dummy2","name":"dummy2"}]}}</code></li>
- * <li>reply: <code>[{"ok":true,"id":"dummy1","rev":"1-8cf73467930ed4ce09baf4067f866696"},{"ok":true,"id":"dummy2","rev":"1-63d558a16704329a6fc5a1f62bef77a3"}]</code></li>
+ * <li>reply: <code>{"body": [{"ok":true,"id":"dummy1","rev":"1-8cf73467930ed4ce09baf4067f866696"},{"ok":true,"id":"dummy2","rev":"1-63d558a16704329a6fc5a1f62bef77a3"}], "status": "ok"}</code></li>
  * </ul>
  * <p/>
  * Create a document:
  * <ul>
  * <li>address: <code>couchdb:/</code></li>
  * <li>message: <code>{"method":"POST","db":"dummy","body":{"dummy":"dummy"}}</code></li>
- * <li>reply: <code>{"ok":true,"id":"982ad9b754f4cbce7537729f2800316e","rev":"1-d464c04beb102488a01910290d137c46"}</code></li>
+ * <li>reply: <code>{"body": {"ok":true,"id":"982ad9b754f4cbce7537729f2800316e","rev":"1-d464c04beb102488a01910290d137c46"}, "status": "ok"}</code></li>
  * </ul>
  * <p/>
  * Get a document:
  * <ul>
  * <li>address: <code>couchdb:/dummy</code></li>
  * <li>message: <code>{"id":"dummy1"}</code></li>
- * <li>reply: <code>{"_id":"dummy1","_rev":"1-8cf73467930ed4ce09baf4067f866696","name":"dummy1"}</code></li>
+ * <li>reply: <code>{"body": {"_id":"dummy1","_rev":"1-8cf73467930ed4ce09baf4067f866696","name":"dummy1"}, "status": "ok"}</code></li>
  * </ul>
  * <p/>
  * Query all docs for a view:
  * <ul>
  * <li>address: <code>couchdb:/dummy/_all_docs</code></li>
  * <li>message: <code>{"params":[{"include_docs":true}]}</code></li>
- * <li>reply: <code>{"total_rows":1,"offset":0,"rows":[{"id":"dummy3","key":"dummy3","value":{"rev":"1-d7e7ace0fb165dcde4d0e9b3de99fbe1"},"doc":{"_id":"dummy3","_rev":"1-d7e7ace0fb165dcde4d0e9b3de99fbe1","name":"dummy3"}}]}</code></li>
+ * <li>reply: <code>{"body": {"total_rows":1,"offset":0,"rows":[{"id":"dummy3","key":"dummy3","value":{"rev":"1-d7e7ace0fb165dcde4d0e9b3de99fbe1"},"doc":{"_id":"dummy3","_rev":"1-d7e7ace0fb165dcde4d0e9b3de99fbe1","name":"dummy3"}}]}, "status": "ok"}</code></li>
  * </ul>
  * <p/>
  * Query a view:
  * <ul>
  * <li>address: <code>couchdb:/dummy/_design/dummy/_view/all</code></li>
  * <li>message: <code>{"params":[{"include_docs":true},{"reduce":false}]}</code></li>
- * <li>reply: <code>{"total_rows":1,"offset":0,"rows":[{"id":"dummy1","key":"dummy1","value":1,"doc":{"_id":"dummy1","_rev":"1-8cf73467930ed4ce09baf4067f866696","name":"dummy1"}}]}</code></li>
+ * <li>reply: <code>{"body": {"total_rows":1,"offset":0,"rows":[{"id":"dummy1","key":"dummy1","value":1,"doc":{"_id":"dummy1","_rev":"1-8cf73467930ed4ce09baf4067f866696","name":"dummy1"}}]}, "status": "ok"}</code></li>
  * </ul>
  * <p/>
  * Register view handlers for a database:
  * <ul>
  * <li>address: <code>couchdb:/_reflect</code></li>
  * <li>message: <code>{"db":"dummy"}</code></li>
- * <li>reply: <code>{"ok":true,"count":1}</code></li>
+ * <li>reply: <code>{"body": {"ok":true,"count":1}, "status": "ok"}</code></li>
  * </ul>
  * <p/>
  * The handler will generate a reply the contains the JSON object/array returned from couchdb. In case of an error
@@ -313,23 +313,25 @@ public class CouchdbVerticle extends BusModBase {
                             if (response.statusCode() >= HttpURLConnection.HTTP_OK
                                     && response.statusCode() < HttpURLConnection.HTTP_MULT_CHOICE) {
                                 if (body.toString("UTF-8").startsWith("[")) {
-                                    requestMsg.reply(new JsonArray(body.toString("UTF-8")));
+                                    requestMsg.reply(new JsonObject().putArray("body",
+                                            new JsonArray(body.toString("UTF-8"))).putString("status", "ok"));
                                 } else if (body.toString("UTF-8").startsWith("{")) {
-                                    requestMsg.reply(new JsonObject(body.toString("UTF-8")));
+                                    requestMsg.reply(new JsonObject().putObject("body",
+                                            new JsonObject(body.toString("UTF-8"))).putString("status", "ok"));
                                 } else {
-                                    requestMsg.reply(body.toString("UTF-8"));
+                                    requestMsg.reply(new JsonObject().putString("body",
+                                            body.toString("UTF-8")).putString("status", "ok"));
                                 }
                             } else {
                                 final JsonObject status = new JsonObject(body.toString("UTF-8"));
                                 final String statusMsg = String.format("%1$s: %2$s", response.statusMessage(),
                                         status.getString("reason"));
-                                requestMsg.fail(response.statusCode(), statusMsg);
+                                sendError(requestMsg, statusMsg);
                             }
                         }
                     });
-
                 } else {
-                    requestMsg.fail(response.statusCode(), response.statusMessage());
+                    sendError(requestMsg, String.format("error: %1$s: %1$s", response.statusCode(), response.statusMessage()));
                 }
             }
         }
@@ -360,8 +362,7 @@ public class CouchdbVerticle extends BusModBase {
             @Override
             public void handle(final Throwable t) {
                 final String errMsg = String.format("failed to query %1$s: %2$s", queryUri, t.getMessage());
-                logger.error(errMsg, t);
-                requestMsg.fail(500, errMsg);
+                sendError(requestMsg, errMsg, (Exception) t);
             }
         }
     }
@@ -395,29 +396,41 @@ public class CouchdbVerticle extends BusModBase {
                 dbsCount = 1;
                 registerDbHandlers(db);
             } else {
-                eb.sendWithTimeout(ADDRESS_ALL_DBS, new JsonObject(), timeout, new AsyncResultHandler<Message<JsonArray>>() {
-                    @Override
-                    public void handle(final AsyncResult<Message<JsonArray>> allDbsReply) {
-                        if (allDbsReply.succeeded()) {
-                            dbsCount = allDbsReply.result().body().size();
-                            for (final Object dbObj : allDbsReply.result().body()) {
-                                registerDbHandlers(dbObj.toString());
+                eb.sendWithTimeout(ADDRESS_ALL_DBS, new JsonObject(), timeout,
+                        new AsyncResultHandler<Message<JsonObject>>() {
+                            @Override
+                            public void handle(final AsyncResult<Message<JsonObject>> allDbsReply) {
+                                if (allDbsReply.succeeded()) {
+                                    final JsonObject json = allDbsReply.result().body();
+                                    if (logger.isDebugEnabled())
+                                        logger.debug(String.format("found dbs: %1$s ", json.encode()));
+                                    if (!"error".equals(json.getString("status"))) {
+                                        final JsonArray dbs = json.getArray("body");
+                                        dbsCount = dbs.size();
+                                        for (final Object dbObj : dbs) {
+                                            registerDbHandlers(dbObj.toString());
+                                        }
+                                        replyOnComplete();
+                                    } else {
+                                        final String errMsg = String.format("failed to reflect couchdb server: %1$s",
+                                                json.getString("message"));
+                                        sendError(reflectServerMsg, errMsg);
+                                    }
+                                } else {
+                                    final String errMsg = String.format("failed to reflect couchdb server: %1$s",
+                                            allDbsReply.cause().getMessage());
+                                    sendError(reflectServerMsg, errMsg);
+                                }
                             }
-                            replyOnComplete();
-                        } else {
-                            final String errMsg = String.format("failed to reflect couchdb server: %1$s",
-                                    allDbsReply.cause().getMessage());
-                            logger.error(errMsg, allDbsReply.cause());
-                            reflectServerMsg.fail(500, allDbsReply.cause().getMessage());
-                        }
-                    }
-                });
+                        });
             }
         }
 
         private void replyOnComplete() {
             if (dbsProcessed == dbsCount) {
-                reflectServerMsg.reply(new JsonObject().putBoolean("ok", true).putNumber("count", dbsCount));
+                reflectServerMsg.reply(
+                        new JsonObject().putObject("body", new JsonObject().putNumber("count",
+                                dbsCount)).putString("status", "ok"));
             }
         }
 
@@ -489,25 +502,30 @@ public class CouchdbVerticle extends BusModBase {
                     final JsonObject json = designDocsResult.result().body();
                     if (logger.isDebugEnabled())
                         logger.debug(String.format("design doc: %1$s", json.encodePrettily()));
-                    final JsonArray rows = json.getArray("rows");
-                    for (final Object row : rows) {
-                        final JsonObject designDoc = ((JsonObject) row).getObject("doc");
-                        final JsonObject views = designDoc.getObject("views");
-                        if (views != null && views.getFieldNames() != null) {
-                            for (final String viewName : views.getFieldNames()) {
-                                if (logger.isDebugEnabled())
-                                    logger.debug(String.format("view name: %1$s", viewName));
-                                final String viewURI = String.format(ADDRESS_VIEW, db,
-                                        ((JsonObject) row).getString("id"), viewName);
+                    if (!"error".equals(json.getString("status"))) {
+                        final JsonArray rows = json.getObject("body").getArray("rows");
+                        for (final Object row : rows) {
+                            final JsonObject designDoc = ((JsonObject) row).getObject("doc");
+                            final JsonObject views = designDoc.getObject("views");
+                            if (views != null && views.getFieldNames() != null) {
+                                for (final String viewName : views.getFieldNames()) {
+                                    if (logger.isDebugEnabled())
+                                        logger.debug(String.format("view name: %1$s", viewName));
+                                    final String viewURI = String.format(ADDRESS_VIEW, db,
+                                            ((JsonObject) row).getString("id"), viewName);
 
-                                // /db/_design/docid/_view/viewname handler
-                                if (logger.isDebugEnabled())
-                                    logger.debug(String.format("registering handler %1$s", viewURI));
-                                final Handler<Message<JsonObject>> viewHandler = new CouchdbRequestHandler(viewURI);
-                                dbsHandlerEntries.get(db).add(new HandlerEntry(viewURI, viewHandler));
-                                eb.registerHandler(viewURI, viewHandler);
+                                    // /db/_design/docid/_view/viewname handler
+                                    if (logger.isDebugEnabled())
+                                        logger.debug(String.format("registering handler %1$s", viewURI));
+                                    final Handler<Message<JsonObject>> viewHandler = new CouchdbRequestHandler(viewURI);
+                                    dbsHandlerEntries.get(db).add(new HandlerEntry(viewURI, viewHandler));
+                                    eb.registerHandler(viewURI, viewHandler);
+                                }
                             }
                         }
+                    } else {
+                        logger.error(String.format("failed to query design docs for db %1$s: %2$s",
+                                db, json.getString("message")));
                     }
                 } else {
                     logger.error(String.format("failed to query design docs for db %1$s",

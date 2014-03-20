@@ -80,11 +80,11 @@ public class CouchdbVerticleTest extends TestVerticle {
         container.logger().info(String.format("sending message to address %1$s: %2$s",
                 CouchdbVerticle.ADDRESS_ALL_DBS, new JsonObject()));
         vertx.eventBus().sendWithTimeout(CouchdbVerticle.ADDRESS_ALL_DBS, new JsonObject(), TIMEOUT,
-                new AsyncResultHandler<Message<JsonArray>>() {
+                new AsyncResultHandler<Message<JsonObject>>() {
                     @Override
-                    public void handle(AsyncResult<Message<JsonArray>> reply) {
+                    public void handle(final AsyncResult<Message<JsonObject>> reply) {
                         if (reply.succeeded()) {
-                            final JsonArray dbs = reply.result().body();
+                            final JsonArray dbs = reply.result().body().getArray("body");
                             container.logger().info(String.format("/_all_dbs: %1$s", dbs.encode()));
                             VertxAssert.assertTrue("no dbs found", dbs.size() > 0);
                         } else {
@@ -106,9 +106,9 @@ public class CouchdbVerticleTest extends TestVerticle {
         container.logger().info(String.format("sending message to address %1$s: %2$s", address, message));
         vertx.eventBus().sendWithTimeout(address, message, TIMEOUT, new AsyncResultHandler<Message<JsonObject>>() {
             @Override
-            public void handle(AsyncResult<Message<JsonObject>> reply) {
+            public void handle(final AsyncResult<Message<JsonObject>> reply) {
                 if (reply.succeeded()) {
-                    final JsonObject docs = reply.result().body();
+                    final JsonObject docs = reply.result().body().getObject("body");
                     container.logger().info(String.format("%1$s: %2$s", address, docs.encode()));
                     VertxAssert.assertTrue("no docs found", docs.size() > 0);
                 } else {
@@ -132,9 +132,9 @@ public class CouchdbVerticleTest extends TestVerticle {
         container.logger().info(String.format("sending message to address %1$s: %2$s", address, message));
         vertx.eventBus().sendWithTimeout(address, message, TIMEOUT, new AsyncResultHandler<Message<JsonObject>>() {
             @Override
-            public void handle(AsyncResult<Message<JsonObject>> reply) {
+            public void handle(final AsyncResult<Message<JsonObject>> reply) {
                 if (reply.succeeded()) {
-                    final JsonObject docs = reply.result().body();
+                    final JsonObject docs = reply.result().body().getObject("body");
                     container.logger().info(String.format("%1$s: %2$s", address, docs.encode()));
                     VertxAssert.assertTrue("no docs found", docs.size() > 0);
                 } else {
@@ -157,9 +157,9 @@ public class CouchdbVerticleTest extends TestVerticle {
         container.logger().info(String.format("sending message to address %1$s: %2$s", address, message));
         vertx.eventBus().sendWithTimeout(address, message, TIMEOUT, new AsyncResultHandler<Message<JsonObject>>() {
             @Override
-            public void handle(AsyncResult<Message<JsonObject>> reply) {
+            public void handle(final AsyncResult<Message<JsonObject>> reply) {
                 if (reply.succeeded()) {
-                    final JsonObject docs = reply.result().body();
+                    final JsonObject docs = reply.result().body().getObject("body");
                     container.logger().info(String.format("%1$s: %2$s", "", docs.encode()));
                     VertxAssert.assertTrue("no docs found", docs.size() > 0);
                 } else {
@@ -190,7 +190,7 @@ public class CouchdbVerticleTest extends TestVerticle {
                         if (reply.succeeded()) {
                             container.logger().info(String.format(String.format("result for %1$s:  %2$s",
                                     serverAddress, reply.result().body())));
-                            VertxAssert.assertTrue("not ok", reply.result().body().getBoolean("ok"));
+                            VertxAssert.assertTrue("not ok", reply.result().body().getObject("body").getBoolean("ok"));
                         } else {
                             container.logger().error(String.format("failed to perform %1$s: %2$s",
                                     serverAddress, reply.cause().getMessage()), reply.cause());
@@ -211,7 +211,7 @@ public class CouchdbVerticleTest extends TestVerticle {
          * @param asyncResult
          */
         @Override
-        public void handle(AsyncResult<String> asyncResult) {
+        public void handle(final AsyncResult<String> asyncResult) {
             container.logger().info(String.format("successfully started %1$s tests",
                     CouchdbVerticle.class.getName()));
             // Deployment is asynchronous and this this handler will be called when it's complete (or failed)
@@ -222,12 +222,14 @@ public class CouchdbVerticleTest extends TestVerticle {
             VertxAssert.assertTrue(asyncResult.succeeded());
             VertxAssert.assertNotNull("deploymentID should not be null", asyncResult.result());
 
-            // create a test database
-            final JsonObject createDbMsg = new JsonObject().putString("method", "PUT").putString("db", DB_NAME);
-            container.logger().info(String.format("sending message to address %1$s: %2$s",
-                    CouchdbVerticle.ADDRESS_SERVER, createDbMsg));
-            vertx.eventBus().sendWithTimeout(CouchdbVerticle.ADDRESS_SERVER, createDbMsg, TIMEOUT,
-                    new CreateTestDbHandler());
+            if (asyncResult.succeeded()) {
+                // create a test database
+                final JsonObject createDbMsg = new JsonObject().putString("method", "PUT").putString("db", DB_NAME);
+                container.logger().info(String.format("sending message to address %1$s: %2$s",
+                        CouchdbVerticle.ADDRESS_SERVER, createDbMsg));
+                vertx.eventBus().sendWithTimeout(CouchdbVerticle.ADDRESS_SERVER, createDbMsg, TIMEOUT,
+                        new CreateTestDbHandler());
+            }
         }
 
         /**
@@ -323,7 +325,8 @@ public class CouchdbVerticleTest extends TestVerticle {
 
                     /**
                      * Creates the handler.
-                     * @param bulkLoadAddress the address of the bulk load handler
+                     *
+                     * @param bulkLoadAddress         the address of the bulk load handler
                      * @param registerDbHandlersReply the result
                      */
                     public ResisterTestBulkLoadResultHandler(String bulkLoadAddress,
@@ -334,6 +337,7 @@ public class CouchdbVerticleTest extends TestVerticle {
 
                     /**
                      * Handles bulk load result events and triggers registration of database view handlers
+                     *
                      * @param bulkLoadReply the result
                      */
                     @Override
