@@ -3,6 +3,7 @@ package com.dreikraft.vertx.couchdb;
 import org.junit.Test;
 import org.vertx.java.core.AsyncResult;
 import org.vertx.java.core.AsyncResultHandler;
+import org.vertx.java.core.Handler;
 import org.vertx.java.core.eventbus.Message;
 import org.vertx.java.core.json.JsonArray;
 import org.vertx.java.core.json.JsonObject;
@@ -23,7 +24,6 @@ import java.net.URL;
  */
 public class CouchdbVerticleTest extends TestVerticle {
 
-    private static final long TIMEOUT = 300000;
     private static final String DB_NAME = "dummy";
 
     /**
@@ -56,20 +56,19 @@ public class CouchdbVerticleTest extends TestVerticle {
         final JsonObject deleteDbMsg = new JsonObject().putString("method", "DELETE").putString("db", DB_NAME);
         container.logger().info(String.format("sending message to address %1$s: %2$s",
                 CouchdbVerticle.ADDRESS_SERVER, deleteDbMsg));
-        vertx.eventBus().sendWithTimeout(CouchdbVerticle.ADDRESS_SERVER, deleteDbMsg, TIMEOUT,
-                new AsyncResultHandler<Message<JsonObject>>() {
-                    @Override
-                    public void handle(final AsyncResult<Message<JsonObject>> reply) {
-                        if (reply.succeeded()) {
-                            container.logger().info(String.format(String.format("result for %1$s:  %2$s",
-                                    CouchdbVerticle.ADDRESS_SERVER, reply.result().body())));
-                        } else {
-                            container.logger().error(String.format("failed to perform %1$s: %2$s",
-                                    CouchdbVerticle.ADDRESS_SERVER, reply.cause().getMessage()), reply.cause());
-                        }
-                        VertxAssert.testComplete();
-                    }
-                });
+        vertx.eventBus().send(CouchdbVerticle.ADDRESS_SERVER, deleteDbMsg, new Handler<Message<JsonObject>>() {
+            @Override
+            public void handle(final Message<JsonObject> reply) {
+                try {
+                    container.logger().info(String.format(String.format("result for %1$s:  %2$s",
+                            CouchdbVerticle.ADDRESS_SERVER, reply.body())));
+                } catch (RuntimeException ex) {
+                    container.logger().error(String.format("failed to perform %1$s: %2$s",
+                            CouchdbVerticle.ADDRESS_SERVER, ex.getMessage()), ex);
+                }
+                VertxAssert.testComplete();
+            }
+        });
     }
 
     /**
@@ -79,21 +78,23 @@ public class CouchdbVerticleTest extends TestVerticle {
     public void testAllDbs() {
         container.logger().info(String.format("sending message to address %1$s: %2$s",
                 CouchdbVerticle.ADDRESS_ALL_DBS, new JsonObject()));
-        vertx.eventBus().sendWithTimeout(CouchdbVerticle.ADDRESS_ALL_DBS, new JsonObject(), TIMEOUT,
-                new AsyncResultHandler<Message<JsonObject>>() {
+        vertx.eventBus().send(CouchdbVerticle.ADDRESS_ALL_DBS, new JsonObject(),
+                new Handler<Message<JsonObject>>() {
                     @Override
-                    public void handle(final AsyncResult<Message<JsonObject>> reply) {
-                        if (reply.succeeded()) {
-                            final JsonArray dbs = reply.result().body().getArray("body");
+                    public void handle(final Message<JsonObject> reply) {
+                        try {
+                            VertxAssert.assertEquals("ok", reply.body().getString("status"));
+                            final JsonArray dbs = reply.body().getArray("body");
                             container.logger().info(String.format("/_all_dbs: %1$s", dbs.encode()));
                             VertxAssert.assertTrue("no dbs found", dbs.size() > 0);
-                        } else {
-                            container.logger().error("failed to perform /_all_dbs", reply.cause());
-                            VertxAssert.fail(reply.cause().getMessage());
+                        } catch (RuntimeException ex) {
+                            container.logger().error("failed to perform /_all_dbs", ex);
+                            VertxAssert.fail(ex.getMessage());
                         }
                         shutdown();
                     }
-                });
+                }
+        );
     }
 
     /**
@@ -104,17 +105,18 @@ public class CouchdbVerticleTest extends TestVerticle {
         final JsonObject message = new JsonObject().putArray("params", new JsonArray("[{\"include_docs\":true}]"));
         final String address = String.format(CouchdbVerticle.ADDRESS_ALL_DOCS, "dummy");
         container.logger().info(String.format("sending message to address %1$s: %2$s", address, message));
-        vertx.eventBus().sendWithTimeout(address, message, TIMEOUT, new AsyncResultHandler<Message<JsonObject>>() {
+        vertx.eventBus().send(address, message, new Handler<Message<JsonObject>>() {
             @Override
-            public void handle(final AsyncResult<Message<JsonObject>> reply) {
-                if (reply.succeeded()) {
-                    final JsonObject docs = reply.result().body().getObject("body");
+            public void handle(final Message<JsonObject> reply) {
+                try {
+                    VertxAssert.assertEquals("ok", reply.body().getString("status"));
+                    final JsonObject docs = reply.body().getObject("body");
                     container.logger().info(String.format("%1$s: %2$s", address, docs.encode()));
                     VertxAssert.assertTrue("no docs found", docs.size() > 0);
-                } else {
+                } catch (RuntimeException ex) {
                     container.logger().error(String.format("failed to perform %1$s", address),
-                            reply.cause());
-                    VertxAssert.fail(reply.cause().getMessage());
+                            ex);
+                    VertxAssert.fail(ex.getMessage());
                 }
                 shutdown();
             }
@@ -130,17 +132,18 @@ public class CouchdbVerticleTest extends TestVerticle {
                 new JsonArray("[{\"include_docs\":true}, {\"reduce\":false}]"));
         final String address = String.format(CouchdbVerticle.ADDRESS_VIEW, "dummy", "_design/dummy", "all");
         container.logger().info(String.format("sending message to address %1$s: %2$s", address, message));
-        vertx.eventBus().sendWithTimeout(address, message, TIMEOUT, new AsyncResultHandler<Message<JsonObject>>() {
+        vertx.eventBus().send(address, message, new Handler<Message<JsonObject>>() {
             @Override
-            public void handle(final AsyncResult<Message<JsonObject>> reply) {
-                if (reply.succeeded()) {
-                    final JsonObject docs = reply.result().body().getObject("body");
+            public void handle(final Message<JsonObject> reply) {
+                try {
+                    VertxAssert.assertEquals("ok", reply.body().getString("status"));
+                    final JsonObject docs = reply.body().getObject("body");
                     container.logger().info(String.format("%1$s: %2$s", address, docs.encode()));
                     VertxAssert.assertTrue("no docs found", docs.size() > 0);
-                } else {
+                } catch (RuntimeException ex) {
                     container.logger().error(String.format("failed to perform %1$s: %2$s", address,
-                            reply.cause().getMessage()), reply.cause());
-                    VertxAssert.fail(reply.cause().getMessage());
+                            ex.getMessage()), ex);
+                    VertxAssert.fail(ex.getMessage());
                 }
                 shutdown();
             }
@@ -155,17 +158,18 @@ public class CouchdbVerticleTest extends TestVerticle {
         final JsonObject message = new JsonObject().putString("id", "dummy1");
         final String address = String.format(CouchdbVerticle.ADDRESS_DB, "dummy");
         container.logger().info(String.format("sending message to address %1$s: %2$s", address, message));
-        vertx.eventBus().sendWithTimeout(address, message, TIMEOUT, new AsyncResultHandler<Message<JsonObject>>() {
+        vertx.eventBus().send(address, message, new Handler<Message<JsonObject>>() {
             @Override
-            public void handle(final AsyncResult<Message<JsonObject>> reply) {
-                if (reply.succeeded()) {
-                    final JsonObject docs = reply.result().body().getObject("body");
+            public void handle(final Message<JsonObject> reply) {
+                try {
+                    VertxAssert.assertEquals("ok", reply.body().getString("status"));
+                    final JsonObject docs = reply.body().getObject("body");
                     container.logger().info(String.format("%1$s: %2$s", "", docs.encode()));
                     VertxAssert.assertTrue("no docs found", docs.size() > 0);
-                } else {
+                } catch (RuntimeException ex) {
                     container.logger().error(String.format("failed to perform %1$s: %2$s", address,
-                            reply.cause().getMessage()), reply.cause());
-                    VertxAssert.fail(reply.cause().getMessage());
+                            ex.getMessage()), ex);
+                    VertxAssert.fail(ex.getMessage());
                 }
                 shutdown();
             }
@@ -183,21 +187,23 @@ public class CouchdbVerticleTest extends TestVerticle {
                 DB_NAME).putObject("body", new JsonObject().putString("dummy", "dummy"));
         container.logger().info(String.format("sending message to address %1$s: %2$s",
                 CouchdbVerticle.ADDRESS_SERVER, createDocMsg));
-        vertx.eventBus().sendWithTimeout(serverAddress, createDocMsg, TIMEOUT,
-                new AsyncResultHandler<Message<JsonObject>>() {
+        vertx.eventBus().send(serverAddress, createDocMsg,
+                new Handler<Message<JsonObject>>() {
                     @Override
-                    public void handle(final AsyncResult<Message<JsonObject>> reply) {
-                        if (reply.succeeded()) {
+                    public void handle(final Message<JsonObject> reply) {
+                        try {
+                            VertxAssert.assertEquals("ok", reply.body().getString("status"));
                             container.logger().info(String.format(String.format("result for %1$s:  %2$s",
-                                    serverAddress, reply.result().body())));
-                            VertxAssert.assertTrue("not ok", reply.result().body().getObject("body").getBoolean("ok"));
-                        } else {
+                                    serverAddress, reply.body())));
+                            VertxAssert.assertTrue("not ok", reply.body().getObject("body").getBoolean("ok"));
+                        } catch (RuntimeException ex) {
                             container.logger().error(String.format("failed to perform %1$s: %2$s",
-                                    serverAddress, reply.cause().getMessage()), reply.cause());
+                                    serverAddress, ex.getMessage()), ex);
                         }
                         shutdown();
                     }
-                });
+                }
+        );
     }
 
     /**
@@ -220,14 +226,14 @@ public class CouchdbVerticleTest extends TestVerticle {
                         CouchdbVerticle.class.getName()), asyncResult.cause());
             }
             VertxAssert.assertTrue(asyncResult.succeeded());
-            VertxAssert.assertNotNull("deploymentID should not be null", asyncResult.result());
+            VertxAssert.assertNotNull("deploymentID should not be null", asyncResult);
 
             if (asyncResult.succeeded()) {
                 // create a test database
                 final JsonObject createDbMsg = new JsonObject().putString("method", "PUT").putString("db", DB_NAME);
                 container.logger().info(String.format("sending message to address %1$s: %2$s",
                         CouchdbVerticle.ADDRESS_SERVER, createDbMsg));
-                vertx.eventBus().sendWithTimeout(CouchdbVerticle.ADDRESS_SERVER, createDbMsg, TIMEOUT,
+                vertx.eventBus().send(CouchdbVerticle.ADDRESS_SERVER, createDbMsg,
                         new CreateTestDbHandler());
             }
         }
@@ -235,7 +241,7 @@ public class CouchdbVerticleTest extends TestVerticle {
         /**
          * Triggers database handler registration after the dummy database has been created.
          */
-        private class CreateTestDbHandler implements AsyncResultHandler<Message<JsonObject>> {
+        private class CreateTestDbHandler implements Handler<Message<JsonObject>> {
 
             /**
              * Handles database creation events.
@@ -243,32 +249,36 @@ public class CouchdbVerticleTest extends TestVerticle {
              * @param reply the database creation result
              */
             @Override
-            public void handle(final AsyncResult<Message<JsonObject>> reply) {
-                if (reply.succeeded()) {
+            public void handle(final Message<JsonObject> reply) {
+                try {
                     container.logger().info(String.format(String.format("result for %1$s:  %2$s",
-                            CouchdbVerticle.ADDRESS_SERVER, reply.result().body())));
-
-                    // register db handlers for dummy db
-                    final String registerDbHandlersAddress = CouchdbVerticle
-                            .ADDRESS_REFLECT;
-                    final JsonObject registerDummyHandlersMessage = new
-                            JsonObject().putString("db", DB_NAME);
-                    container.logger().info(String.format("sending message to address %1$s: %2$s",
-                            registerDbHandlersAddress, registerDummyHandlersMessage.toString()));
-                    vertx.eventBus().sendWithTimeout(registerDbHandlersAddress,
-                            registerDummyHandlersMessage, TIMEOUT,
-                            new RegisterTestDbResultHandler(registerDbHandlersAddress, registerDummyHandlersMessage));
-
-                } else {
+                            CouchdbVerticle.ADDRESS_SERVER, reply.body())));
+                    if ("ok".equals(reply.body().getString("status"))) {
+                        // register db handlers for dummy db
+                        final String registerDbHandlersAddress = CouchdbVerticle
+                                .ADDRESS_REFLECT;
+                        final JsonObject registerDummyHandlersMessage = new
+                                JsonObject().putString("db", DB_NAME);
+                        container.logger().info(String.format("sending message to address %1$s: %2$s",
+                                registerDbHandlersAddress, registerDummyHandlersMessage.toString()));
+                        vertx.eventBus().send(registerDbHandlersAddress, registerDummyHandlersMessage,
+                                new RegisterTestDbResultHandler(registerDbHandlersAddress, registerDummyHandlersMessage));
+                    } else {
+                        container.logger().error(String.format("failed to perform %1$s: %2$s",
+                                CouchdbVerticle.ADDRESS_SERVER, reply.body().getString("message")));
+                        shutdown();
+                    }
+                } catch (RuntimeException ex) {
                     container.logger().error(String.format("failed to perform %1$s: %2$s",
-                            CouchdbVerticle.ADDRESS_SERVER, reply.cause().getMessage()), reply.cause());
+                            CouchdbVerticle.ADDRESS_SERVER, ex.getMessage()), ex);
+                    shutdown();
                 }
             }
 
             /**
              * Bulk loads documents and views into the dummy database after registering the db handlers.
              */
-            private class RegisterTestDbResultHandler implements AsyncResultHandler<Message<JsonObject>> {
+            private class RegisterTestDbResultHandler implements Handler<Message<JsonObject>> {
                 private final String registerDbHandlersAddress;
                 private final JsonObject registerDummyHandlersMessage;
 
@@ -290,38 +300,44 @@ public class CouchdbVerticleTest extends TestVerticle {
                  * @param registerDbHandlersReply the result
                  */
                 @Override
-                public void handle(final AsyncResult<Message<JsonObject>>
-                                           registerDbHandlersReply) {
-                    if (registerDbHandlersReply.succeeded()) {
+                public void handle(final Message<JsonObject> registerDbHandlersReply) {
+                    try {
                         container.logger().info(String.format(String.format("result for %1$s:  %2$s",
-                                registerDbHandlersAddress, registerDbHandlersReply.result().body())));
+                                registerDbHandlersAddress, registerDbHandlersReply.body())));
+                        if ("ok".equals(registerDbHandlersReply.body().getString("status"))) {
 
-                        // load test documents and views
-                        final JsonObject dummySchema = new JsonObject(vertx
-                                .fileSystem().readFileSync
-                                        ("dummyDB.json").toString("UTF-8"));
-                        final JsonObject dummyDbMsg = new JsonObject().putString("method",
-                                "POST").putObject("body", dummySchema);
-                        final String bulkLoadAddress = String.format(CouchdbVerticle.ADDRESS_BULK_DOCS,
-                                DB_NAME);
-                        container.logger().info(String.format("sending message to address %1$s: %2$s",
-                                bulkLoadAddress, dummyDbMsg.toString()));
-                        vertx.eventBus().sendWithTimeout(bulkLoadAddress, dummyDbMsg, TIMEOUT,
-                                new ResisterTestBulkLoadResultHandler(bulkLoadAddress, registerDbHandlersReply));
-                    } else {
+                            // load test documents and views
+                            final JsonObject dummySchema = new JsonObject(vertx
+                                    .fileSystem().readFileSync
+                                            ("dummyDB.json").toString("UTF-8"));
+                            final JsonObject dummyDbMsg = new JsonObject().putString("method",
+                                    "POST").putObject("body", dummySchema);
+                            final String bulkLoadAddress = String.format(CouchdbVerticle.ADDRESS_BULK_DOCS,
+                                    DB_NAME);
+                            container.logger().info(String.format("sending message to address %1$s: %2$s",
+                                    bulkLoadAddress, dummyDbMsg.toString()));
+                            vertx.eventBus().send(bulkLoadAddress, dummyDbMsg,
+                                    new ResisterTestBulkLoadResultHandler(bulkLoadAddress, registerDbHandlersReply));
+                        } else {
+                            container.logger().error(String.format("failed to perform %1$s: %2$s",
+                                    registerDbHandlersAddress, registerDbHandlersReply.body().getString
+                                            ("message")
+                            ));
+                            shutdown();
+                        }
+                    } catch (RuntimeException ex) {
                         container.logger().error(String.format("failed to perform %1$s: %2$s",
-                                registerDbHandlersAddress,
-                                registerDbHandlersReply.cause().getMessage()),
-                                registerDbHandlersReply.cause());
+                                registerDbHandlersAddress, ex.getMessage()), ex);
+                        shutdown();
                     }
                 }
 
                 /**
                  * Handles buld load results and triggers reregistry of db/view handlers
                  */
-                private class ResisterTestBulkLoadResultHandler implements AsyncResultHandler<Message<JsonArray>> {
+                private class ResisterTestBulkLoadResultHandler implements Handler<Message<JsonObject>> {
                     private final String bulkLoadAddress;
-                    private final AsyncResult<Message<JsonObject>> registerDbHandlersReply;
+                    private final Message<JsonObject> registerDbHandlersReply;
 
                     /**
                      * Creates the handler.
@@ -330,7 +346,7 @@ public class CouchdbVerticleTest extends TestVerticle {
                      * @param registerDbHandlersReply the result
                      */
                     public ResisterTestBulkLoadResultHandler(String bulkLoadAddress,
-                                                             AsyncResult<Message<JsonObject>> registerDbHandlersReply) {
+                                                             Message<JsonObject> registerDbHandlersReply) {
                         this.bulkLoadAddress = bulkLoadAddress;
                         this.registerDbHandlersReply = registerDbHandlersReply;
                     }
@@ -341,38 +357,50 @@ public class CouchdbVerticleTest extends TestVerticle {
                      * @param bulkLoadReply the result
                      */
                     @Override
-                    public void handle(final AsyncResult<Message<JsonArray>> bulkLoadReply) {
-                        if (bulkLoadReply.succeeded()) {
+                    public void handle(final Message<JsonObject> bulkLoadReply) {
+                        try {
                             container.logger().info(String.format(String.format("result for %1$s:  %2$s",
-                                    bulkLoadAddress, bulkLoadReply.result().body())));
+                                    bulkLoadAddress, bulkLoadReply.body())));
 
-                            // reregister view handlers after schema import
-                            container.logger().info(String.format("sending message to address %1$s: %2$s",
-                                    registerDbHandlersAddress, registerDummyHandlersMessage.toString()));
-                            vertx.eventBus().sendWithTimeout(registerDbHandlersAddress, registerDummyHandlersMessage,
-                                    TIMEOUT, new AsyncResultHandler<Message<JsonObject>>() {
+                            if ("ok".equals(bulkLoadReply.body().getString("status"))) {
+                                // reregister view handlers after schema import
+                                container.logger().info(String.format("sending message to address %1$s: %2$s",
+                                        registerDbHandlersAddress, registerDummyHandlersMessage.toString()));
+                                vertx.eventBus().send(registerDbHandlersAddress, registerDummyHandlersMessage,
+                                        new Handler<Message<JsonObject>>() {
 
-                                @Override
-                                public void handle(final AsyncResult<Message<JsonObject>> reregisterReply) {
-                                    if (reregisterReply.succeeded()) {
-                                        container.logger().info(String.format(String.format(
-                                                "result for %1$s:  %2$s", registerDbHandlersAddress,
-                                                reregisterReply.result().body())));
-                                        // start the tests
-                                        startTests();
-                                    } else {
-                                        container.logger().error(String.format("failed to perform %1$s: %2$s",
-                                                registerDbHandlersAddress,
-                                                registerDbHandlersReply.cause().getMessage()),
-                                                registerDbHandlersReply.cause());
-                                    }
-                                }
-                            });
-                        } else {
+                                            @Override
+                                            public void handle(final Message<JsonObject> reregisterReply) {
+                                                try {
+                                                    if ("ok".equals(reregisterReply.body().getString("status"))) {
+                                                        container.logger().info(String.format(String.format(
+                                                                "result for %1$s:  %2$s", registerDbHandlersAddress,
+                                                                reregisterReply.body())));
+                                                        // start the tests
+                                                        startTests();
+                                                    } else {
+                                                        container.logger().error(String.format("failed to perform %1$s: %2$s",
+                                                                registerDbHandlersAddress,
+                                                                reregisterReply.body().getString("message")));
+                                                        shutdown();
+                                                    }
+                                                } catch (RuntimeException ex) {
+                                                    container.logger().error(String.format("failed to perform %1$s: %2$s",
+                                                            registerDbHandlersAddress, ex.getMessage()), ex);
+                                                    shutdown();
+                                                }
+                                            }
+                                        }
+                                );
+                            } else {
+                                container.logger().error(String.format("failed to perform %1$s: %2$s",
+                                        bulkLoadAddress, bulkLoadReply.body().getString("message")));
+                                shutdown();
+                            }
+                        } catch (RuntimeException ex) {
                             container.logger().error(String.format("failed to perform %1$s: %2$s",
-                                    bulkLoadAddress,
-                                    bulkLoadReply.cause().getMessage()),
-                                    bulkLoadReply.cause());
+                                    bulkLoadAddress, ex.getMessage()), ex);
+                            shutdown();
                         }
                     }
                 }

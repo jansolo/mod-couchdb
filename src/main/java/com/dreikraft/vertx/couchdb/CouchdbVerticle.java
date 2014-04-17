@@ -423,10 +423,8 @@ public class CouchdbVerticle extends BusModBase {
 
         private void replyOnComplete() {
             if (dbsProcessed == dbsCount) {
-                reflectServerMsg.reply(
-                        new JsonObject().putObject("body", new JsonObject().putNumber("count",
-                                dbsCount)).putString("status", "ok")
-                );
+                sendOK(reflectServerMsg, new JsonObject().putObject("body", new JsonObject().putNumber("count",
+                        dbsCount)));
             }
         }
 
