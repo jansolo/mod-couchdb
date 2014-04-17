@@ -4,6 +4,7 @@ import org.vertx.java.busmods.BusModBase;
 import org.vertx.java.core.AsyncResult;
 import org.vertx.java.core.AsyncResultHandler;
 import org.vertx.java.core.Future;
+import org.vertx.java.core.Handler;
 import org.vertx.java.core.eventbus.Message;
 import org.vertx.java.core.json.JsonObject;
 
@@ -49,29 +50,31 @@ public class CouchdbInitVerticle extends BusModBase {
 
                             if (getOptionalBooleanConfig("registerDbHandlers", true)) {
                                 // register all db handlers
-                                eb.sendWithTimeout(CouchdbVerticle.ADDRESS_REFLECT, new JsonObject(), timeout,
-                                        new AsyncResultHandler<Message<JsonObject>>() {
+                                eb.send(CouchdbVerticle.ADDRESS_REFLECT, new JsonObject(),
+                                        new Handler<Message<JsonObject>>() {
                                             @Override
-                                            public void handle(final AsyncResult<Message<JsonObject>> reflectServerMessage) {
-                                                if (reflectServerMessage.succeeded()) {
-                                                    if (!"error".equals(reflectServerMessage.result().body().getString
+                                            public void handle(final Message<JsonObject> reflectServerMessage) {
+                                                try {
+                                                    if (!"error".equals(reflectServerMessage.body().getString
                                                             ("status"))) {
                                                         startedResult.setResult(null);
                                                     } else {
                                                         final Exception ex = new Exception(
                                                                 String.format("failed to start CouchdbVerticle: " +
-                                                                "%1$s", reflectServerMessage.result().body().getString
-                                                                ("message")));
+                                                                        "%1$s", reflectServerMessage.body().getString
+                                                                        ("message"))
+                                                        );
                                                         logger.error(ex.getMessage(), ex);
                                                         startedResult.setFailure(ex);
                                                     }
-                                                } else {
-                                                    logger.error(String.format("failed to start CouchdbVerticle: %1$s",
-                                                            reflectServerMessage.cause()));
-                                                    startedResult.setFailure(reflectServerMessage.cause());
+                                                } catch (RuntimeException ex) {
+                                                    logger.error(String.format("failed to start CouchdbVerticle: " +
+                                                            "%1$s",ex));
+                                                    startedResult.setFailure(ex);
                                                 }
                                             }
-                                        });
+                                        }
+                                );
                             } else {
                                 startedResult.setResult(null);
                             }
