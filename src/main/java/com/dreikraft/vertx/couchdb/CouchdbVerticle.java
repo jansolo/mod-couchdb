@@ -133,7 +133,7 @@ public class CouchdbVerticle extends BusModBase {
      * The view addresses <code>{@value}</code> map to couchdb API url
      * <code>/dbname/_design/designDocId/_view/viewName</code>.
      */
-    public static final String ADDRESS_VIEW = ADDRESS_PREFIX + "/%1$s/%2$s/_view/%3$s";
+    public static final String ADDRESS_VIEW = ADDRESS_PREFIX + "/%1$s/_design/%2$s/_view/%3$s";
     /**
      * The reflect address <code>{@value}</code> registers handlers for a given database or if omitted for all
      * databases in the server.
@@ -506,7 +506,7 @@ public class CouchdbVerticle extends BusModBase {
                                     if (logger.isDebugEnabled())
                                         logger.debug(String.format("view name: %1$s", viewName));
                                     final String viewURI = String.format(ADDRESS_VIEW, db,
-                                            ((JsonObject) row).getString("id"), viewName);
+                                            ((JsonObject) row).getString("id").split("/")[1], viewName);
 
                                     // /db/_design/docid/_view/viewname handler
                                     if (logger.isDebugEnabled())
