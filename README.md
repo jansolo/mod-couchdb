@@ -1,7 +1,11 @@
 # mod-couchdb
 
-Wraps the couchdb API onto vert.x event bus messages. See JavaDoc on the CouchdbVerticle for more information on the
-registered handlers and usage of the event bus API.
+Wraps the couchdb API onto vert.x event bus messages. The module registers handlers for querying and updating
+couchdb databases on the event bus. The module can be used to query and update couchdb directly from the browser via
+the event bus bridge (be careful which calls you expose over the bridge, because the module itself does not enforce
+and check any security), but typically will be wrapped behind some "business" verticles.
+
+See JavaDoc on the CouchdbVerticle for more information on the registered handlers and usage of the event bus API.
 
 # Dependencies
 
@@ -20,18 +24,61 @@ Deploy the module `jansolo~mod-couchdb~0.1-SNAPSHOT` in the `start()` method of 
 vertx runmod 3kraft~mod-couchdb~0.1-SNAPSHOT
 ```
 
-## Configuration
+# Configuration
+
+The module supports following configuration parameters:
 
 - `host: String` ... The hostname of the couchdb server; defaults to `localhost`
 - `port: int` ... The port of the couchdb server; defaults to `5984`
-- `timeout: long` ... The request timeout until a call is considered failed; defaults to `10000` msec
 - `user: String` ... A couchdb username; optional; defaults to `null`
 - `passwd: String` ... A couchdb password; optional; defaults to `null`
+- `registerDbHandlers: boolean`... Whether to register handlers for all databases found in the configured couchdb
+server at startup of the module; defaults to `true
+- `instances: boolean`... The number of verticle instances, that should be started; defaults to the number of processor
+cores on the system
 
 # Usage
 
-Wraps the the couchdb API into vert.x event bus calls. Registers event bus handlers for CouchDb API methods. Call 
-parameters, http method, database name, request headers and document ids can be passed wrapped into a JsonObject.
+First handlers for the CouchDB API need to be registered by the module. This will be done automatically at startup for
+ all databases found in the configured server. If you don't like to register handlers for all databases, you can set the
+`registerDbHandlers` to `false` in the module config. Then you need to register the handlers manually by sending a
+message on the event with the name of the database you want to register the handlers for:
+
+- address: `couchdb:/_reflect`
+- message: `{"db":"dummy"}`
+- reply: `{"body": {"ok":true,"count":1}, "status": "ok"}`
+
+All handlers support a set of parameters, that will be mapped to the corresponding couchdb API calls - not all
+parameters make sense on all API calls. The parameters need to be send to the matching event bus address wrapped into
+ a JSON Object. Following parameters are supported:
+
+ ```
+ {
+    "db": "the name of the database",
+    "method": "the http method passed to couchdb GET/PUT/DELETE/HEAD",
+    "headers": [ an array of http headers passed to couchdb  ]
+    "params": [ an array of url query parameters passed to couchdb ],
+    "id": "a document id",
+    "body": { a json object passed in the request body to couchdb },
+    "user": " a couchdb basic auth user name",
+    "passwd": " a couchdb basic auth user password"
+ }
+ ```
+
+The response from couchdb gets wrapped into a JSON object and will by replied to the caller:
+
+```
+{
+    "status": "ok/error",
+    "message": " an error message from couchdb in case of an failed request",
+    "body": { a json object/array containing the result from couchdb}
+}
+```
+
+The `status` field can be used to check if the call was successful ("ok"), otherwise the reply will contain a `message`
+field with the corresponding error message from couchdb.
+
+## Sample calls
 
 ### Get all databases in a couchdb server instance:
 
@@ -87,6 +134,4 @@ parameters, http method, database name, request headers and document ids can be 
 - message: `{"db":"dummy"}`
 - reply: `{"ok":true,"count":1}`
 
-The handler will generate a reply the contains the JSON object/array returned from couchdb. In case of an error
-the handlers will send a ReplyException with the wrapped couchdb error.
 
