@@ -16,7 +16,8 @@ import org.vertx.java.core.json.JsonObject;
 public class CouchdbInitVerticle extends BusModBase {
 
     /**
-     * Starts x instances of the CouchdbVerticle.
+     * Starts x instances of the CouchdbVerticle. Optionally creates handlers for all databases found in the configured
+     * couchdb server on startup.
      *
      * Supports following config parameters:
      * <ul>
@@ -24,7 +25,6 @@ public class CouchdbInitVerticle extends BusModBase {
      * defaults to number of cpu cores</li>
      * <li>registerDbHandlers:<code>boolean</code> ... register API handlers for the various databases found in the
      * connected couchdb instance on startup; default <code>true</code></li>
-     * <li>timeout:<code>long</code> ... timeout until startup is considered failed</li>
      * </ul>
      *
      * @param startedResult the startup result

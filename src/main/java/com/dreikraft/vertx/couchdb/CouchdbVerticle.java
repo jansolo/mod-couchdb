@@ -18,20 +18,48 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Wraps the the couchdb API into vert.x event bus calls. Registers event bus handlers for CouchDb API methods.
+ * Wraps the couchdb API onto vert.x event bus messages. The module registers handlers for querying and updating
+ * couchdb databases on the event bus. The module can be used to query and update couchdb directly from the browser via
+ * the event bus bridge (be careful which calls you expose over the bridge, because the module itself does not enforce
+ * and check any security), but typically will be wrapped behind some "business" verticles.
  * <p>
  * Supported configuration parameters:
  * <ul>
  * <li><code>host: String</code> ... The hostname of the couchdb server; defaults to <code>localhost</code></li>
  * <li><code>port: int</code> ... The port of the couchdb server; defaults to <code>5984</code></li>
- * <li><code>timeout: long</code> ... The request timeout until a call is considered failed; defaults to
- * <code>10000</code> msec</li>
  * <li><code>user: String</code> ... A couchdb username; optional; defaults to <code>null</code></li>
  * <li><code>passwd: String</code> ... A couchdb password; optional; defaults to <code>null</code></li>
  * </ul>
  * <p>
- * Call parameters, http method, database name, request headers and document ids can be passed wrapped into a
- * JsonObject.
+ * All handlers support a set of parameters, that will be mapped to the corresponding couchdb API calls - not all
+ * parameters make sense on all API calls. The parameters need to be send to the matching event bus address wrapped into
+ * a JSON Object. Following parameters are supported:
+ * <code>
+ * {
+ * "db": "the name of the database",
+ * "method": "the http method passed to couchdb GET/PUT/DELETE/HEAD",
+ * "headers": [ an array of http headers passed to couchdb  ]
+ * "params": [ an array of url query parameters passed to couchdb ],
+ * "id": "a document id",
+ * "body": { a json object passed in the request body to couchdb },
+ * "user": " a couchdb basic auth user name",
+ * "passwd": " a couchdb basic auth user password"
+ * }
+ * </code>
+ * <p>
+ * The response from couchdb gets wrapped into a JSON object and will by replied to the caller:
+ * <code>
+ * {
+ * "status": "ok/error",
+ * "message": " an error message from couchdb in case of an failed request",
+ * "body": { a json object/array containing the result from couchdb}
+ * }
+ * </code>
+ * <p>
+ * The `status` field can be used to check if the call was successful ("ok"), otherwise the reply will contain a  `message`
+ * field with the corresponding error message from couchdb.
+ * <p>
+ * Supported messages:
  * <p>
  * Get all databases in a couchdb server instance:
  * <ul>
@@ -96,9 +124,6 @@ import java.util.Set;
  * <li>message: <code>{"db":"dummy"}</code></li>
  * <li>reply: <code>{"body": {"ok":true,"count":1}, "status": "ok"}</code></li>
  * </ul>
- * <p>
- * The handler will generate a reply the contains the JSON object/array returned from couchdb. In case of an error
- * the handlers will send a ReplyException with the wrapped couchdb error.
  *
  * @author jansolo
  */
