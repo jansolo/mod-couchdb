@@ -146,6 +146,10 @@ public class CouchdbVerticle extends BusModBase {
      */
     public static final String ADDRESS_ALL_DBS = ADDRESS_PREFIX + "/_all_dbs";
     /**
+     * The active tasks view address <code>{@value}</code> maps to couchdb API url <code>/_active_tasks</code>.
+     */
+    public static final String ADDRESS_ACTIVE_TASKS = ADDRESS_PREFIX + "/_active_tasks";
+    /**
      * The all database documents address <code>{@value}</code> maps to couchdb API url
      * <code>/dbname/_all_docs</code>.
      */
@@ -195,6 +199,13 @@ public class CouchdbVerticle extends BusModBase {
         if (logger.isDebugEnabled())
             logger.debug(String.format("registering handler %1$s", ADDRESS_ALL_DBS));
         eb.registerHandler(ADDRESS_ALL_DBS, new CouchdbRequestHandler(ADDRESS_ALL_DBS));
+
+        // /_active_tasks
+        if (logger.isDebugEnabled())
+            logger.debug(String.format("registering handler %1$s", ADDRESS_ACTIVE_TASKS));
+        eb.registerHandler(ADDRESS_ACTIVE_TASKS, new CouchdbRequestHandler(ADDRESS_ACTIVE_TASKS));
+
+
 
         // /_reflect handler
         if (logger.isDebugEnabled())
